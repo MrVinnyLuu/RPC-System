@@ -1,12 +1,19 @@
-CC=cc
-RPC_SYSTEM=rpc.o
+# This Makefile is adapted from the Makefile provided in COMP20003
+
+# define C compiler & flags
+CC = gcc
+CFLAGS = -Wall -g
+# define libraries to be linked
+LIB = 
+
+RPC_SYSTEM = rpc.o
 
 .PHONY: format all
 
 all: $(RPC_SYSTEM)
 
 $(RPC_SYSTEM): rpc.c rpc.h
-	$(CC) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 # RPC_SYSTEM_A=rpc.a
 # $(RPC_SYSTEM_A): rpc.o
@@ -14,3 +21,6 @@ $(RPC_SYSTEM): rpc.c rpc.h
 
 format:
 	clang-format -style=file -i *.c *.h
+
+clean:
+	rm -f $(RPC_SYSTEM)
