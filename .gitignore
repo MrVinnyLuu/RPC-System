@@ -1,3 +1,6 @@
 server
+s
 client
+c
 *.o
+test*
