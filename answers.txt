@@ -15,13 +15,13 @@ In both a "real world" server and in this project, TCP should be used due to its
 
 4. In which function(s) should the socket(s) be created?
 A socket requires: Client IP, Client Port, Server IP, Server Port, Protocol
-The protocol is constant and implied.
+The protocol is constant.
 "rpc_init_server" receives information for and sets up Server IP and Server Port.
 "rpc_init_client"  receives information for and sets up Client IP and Client Port.
 Therefore, the socket(s) will be created in the rpc_init_server and rpc_init_client functions in this project. A "real world" server would likely follow the same general idea with seperate functions handling client and server information. 
 
 5. Should rpc_client and rpc_server be allocated dynamically or statically? What are the implications for the client and server code?
-In this project, "rpc_client" and "rpc_server" should both be allocated dynamically to provide more flexibility and better space efficiency.  However, this would mean that the client and server code would have to be able to handle generic (unspecified) "rpc_client" and "rpc_server" data. This would also be true for a "real world" RPC server.
+In this project, "rpc_client" and "rpc_server" should both be allocated dynamically to provide more flexibility and better space efficiency.  However, this would mean that the client and server code would have to be able to handle generic (unspecified) "rpc_client" and "rpc_server" data. It would also mean that memory would have to freed on close. This would also be true for a "real world" RPC server.
 
 6. What happens if one host uses big-endian byte order and the other uses little-endian? How does that relate to “network byte order”?
 If hosts use different endian byte orders, information on one host will not match information communicated to the other. Using "network byte order" resolves this issue by enforcing big-endian byte order, regardless of the machine's architecture. This is true both in this project and in a "real world" RPC server. 
