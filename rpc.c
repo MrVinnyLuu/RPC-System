@@ -13,7 +13,6 @@
 /****************************** SERVER-SIDE API *******************************/
 
 typedef struct func {
-    rpc_handle *handle;
     char *name;
     rpc_handler handler;
 } func_t;
@@ -24,11 +23,6 @@ struct rpc_server {
     int sock_fd;
     int num_func, cur_size;
     func_t **functions;
-};
-
-struct rpc_handle {
-    /* Add variable(s) for handle */
-    int id;
 };
 
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
@@ -44,7 +38,7 @@ rpc_server *rpc_init_server(int port) {
     hints.ai_socktype = SOCK_STREAM; // TCP
     hints.ai_flags = AI_PASSIVE;
     char service[5];
-    sprintf(service,"%d",port);
+    sprintf(service, "%d", port);
     if (getaddrinfo(NULL, service, &hints, &servinfo) < 0) {
 		perror("getaddrinfo");
 		exit(EXIT_FAILURE);
@@ -133,16 +127,15 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 
 }
 
-rpc_handle *rpc_find_func(rpc_server *srv, char *name) {
+int rpc_find_func(rpc_server *srv, char *name) {
 
-    int i;
-    for (i = 0; i < srv->num_func; i++) {
+    for (int i = 0; i < srv->num_func; i++) {
         if (strcmp(srv->functions[i]->name, name) == 0) {
-            return srv->functions[i]->handle;
+            return i;
         }
     }
 
-    return NULL;
+    return -1;
 
 }
 
@@ -152,13 +145,13 @@ rpc_data *rpc_call_func(rpc_server *srv, rpc_handle *h, rpc_data *payload) {
 
 }
 
-/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 */
+/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
+   Practical 9 */
 void rpc_serve_all(rpc_server *srv) {
 
     if (srv == NULL) return;    
 
     socklen_t client_addr_size;
-    // char ip[INET6_ADDRSTRLEN];
     int client_sock_fd = -1;
     struct sockaddr_in6 client_addr;
     char buffer[256];
@@ -180,26 +173,57 @@ void rpc_serve_all(rpc_server *srv) {
         return;
     }
 
-    // inet_ntop(AF_INET6, &(client_addr.sin6_addr), ip, sizeof(ip));
-
     while(1) {
- 
-		/* Wait for data from client */
-		if (recv(client_sock_fd, buffer, 256, 0) < 0) {
+         
+		int n;
+		if ((n = recv(client_sock_fd, buffer, 256, 0)) < 0) {
 			perror("recv()");
 			close(client_sock_fd);
 			continue;
 		}
 
-        puts(buffer);
- 
-		/* Send response to client */
-		if (send(client_sock_fd, buffer, strlen(buffer), 0) < 0) {
-			perror("send()");
-			close(client_sock_fd);
-			continue;
-		}
+        char *header = strtok(buffer, ',');
 
+        // Deal with FIND
+        if (strncmp("FIND", header, 4) == 0) {
+
+            int id = rpc_find_func(srv, strtok(buffer, ','));
+            char *ret[10];
+            sprintf(ret, "%d", id);
+
+            // Respond with function id
+            if (send(client_sock_fd, ret, n, 0) < 0) {
+                perror("send()");
+                close(client_sock_fd);
+                continue;
+            }
+
+        // Deal with CALL
+        } else if (strncmp("CALL", header, 4) == 0) {
+
+            int id = atoi(strtok(buffer, ','));
+
+            rpc_data *payload;
+            payload->data1 = atoi(strtok(buffer, ','));
+            payload->data2_len = atoi(strtok(buffer, ','));
+            payload->data2 = strtok(buffer, ',');
+
+            rpc_data *res = rpc_call_func(srv, id, payload);
+            
+
+            // Respond with rpc_data result as a string
+            if (send(client_sock_fd, ret, n, 0) < 0) {
+                perror("send");
+                close(client_sock_fd);
+                continue;
+            }
+
+        } else {
+            perror("Unknown header");
+            close(client_sock_fd);
+            continue;
+        }
+	
 	}
 
     /* Do TCP teardown */
@@ -240,12 +264,18 @@ struct rpc_client {
     int sock_fd;
 };
 
+struct rpc_handle {
+    /* Add variable(s) for handle */
+    int id;
+};
+
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
    Practical Week 9 */
 rpc_client *rpc_init_client(char *addr, int port) {
 
     if (addr == NULL) return NULL;
 
+    // Initialise client side
     int sock_fd = -1;
     struct addrinfo hints, *servinfo, *rp;
 
@@ -272,6 +302,38 @@ rpc_client *rpc_init_client(char *addr, int port) {
 	}
 
     freeaddrinfo(servinfo);
+
+    // Initialise client structure
+    rpc_client *cl = malloc(sizeof(rpc_client));
+    if (!cl) return NULL;
+
+    // cl->srv_addr = addr;
+    // cl->port = port;
+    cl->sock_fd = sock_fd;
+
+    return cl;
+
+}
+
+rpc_handle *rpc_find(rpc_client *cl, char *name) {
+
+    if (cl == NULL || name == NULL) return NULL;
+
+    // char *message = "hello world";
+
+    // /* Send data to server */
+	// if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
+	// 	perror("send");
+	// 	close(cl->sock_fd);
+	// 	return NULL;
+	// }
+ 
+	// /* Wait for data from server */
+	// if (recv(cl->sock_fd, message, 2000, 0) < 0) {
+	// 	perror("recv()");
+	// 	close(cl->sock_fd);
+	// 	return NULL;
+	// }
 
     char buffer[256];
     while (fgets(buffer, 255, stdin) != NULL) {
@@ -300,39 +362,6 @@ rpc_client *rpc_init_client(char *addr, int port) {
 		printf("%s\n", buffer);
 		printf("Please enter the message: ");
 	}
-
-    // Initialise client structure
-    rpc_client *cl = malloc(sizeof(rpc_client));
-    if (!cl) return NULL;
-
-    // cl->srv_addr = addr;
-    // cl->port = port;
-    cl->sock_fd = sock_fd;
-
-    return cl;
-
-}
-
-/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 */
-rpc_handle *rpc_find(rpc_client *cl, char *name) {
-
-    if (cl == NULL || name == NULL) return NULL;
-
-    // char *message = "hello world";
-
-    // /* Send data to server */
-	// if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
-	// 	perror("send");
-	// 	close(cl->sock_fd);
-	// 	return NULL;
-	// }
- 
-	// /* Wait for data from server */
-	// if (recv(cl->sock_fd, message, 2000, 0) < 0) {
-	// 	perror("recv()");
-	// 	close(cl->sock_fd);
-	// 	return NULL;
-	// }
 
     return NULL;
 

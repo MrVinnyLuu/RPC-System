@@ -32,13 +32,13 @@ Two types of requests:
 FIND
 Used to find a function given its name
 Responds with an integer id (or -1 if not found)
-Usage: "FIND <func_name>"
-Eg: "FIND add2"
+Usage: "FIND,<func_name>"
+Eg: "FIND,add2"
 CALL
 Used to call a function given its integer id
 Responds with "<data1> <data2_len> <data2>" (or NULL if not found)
 Usage: "CALL <id> <data1> <data2_len> <data2>"
-Eg: "CALL 0 1 1 127"
+Eg: "CALL,0,1,1,127"
 
 TCP should be used.
 TCP
