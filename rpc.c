@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -19,8 +20,8 @@ typedef struct func {
 
 struct rpc_server {
     /* Add variable(s) for server state */
-    int port;
-    int listen_sock_fd;
+    // int port;
+    int sock_fd;
     int num_func, cur_size;
     func_t **functions;
 };
@@ -30,38 +31,60 @@ struct rpc_handle {
     int id;
 };
 
-/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 */
+/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
+   Practical Week 9 */
 rpc_server *rpc_init_server(int port) {
 
-    rpc_server *srv = malloc(sizeof(*srv));
-    if (!srv) return NULL;
+    // Initialise server side 3 tuple
+    int sock_fd = -1;
+    struct addrinfo hints, *servinfo;
 
-    int listen_sock_fd = -1;
-    struct sockaddr_in6 server_addr;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET6; // IPv6
+    hints.ai_socktype = SOCK_STREAM; // TCP
+    hints.ai_flags = AI_PASSIVE;
+    char service[5];
+    sprintf(service,"%d",port);
+    if (getaddrinfo(NULL, service, &hints, &servinfo) < 0) {
+		perror("getaddrinfo");
+		exit(EXIT_FAILURE);
+	}
 
-    listen_sock_fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-	if(listen_sock_fd == -1) return NULL;
+    sock_fd = socket(servinfo->ai_family, servinfo->ai_socktype,
+                     servinfo->ai_protocol);
+	if(sock_fd < 0) {
+        perror("socket");
+        return NULL;
+    }
 
-    int enable = 1;
-    if (setsockopt(listen_sock_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+    int re = 1;
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &re, sizeof(int)) < 0) {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
 
-    server_addr.sin6_family = AF_INET6;
-	server_addr.sin6_addr = in6addr_any;
-	server_addr.sin6_port = htons(port);
-
-    if (bind(listen_sock_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(sock_fd, servinfo->ai_addr, servinfo->ai_addrlen) < 0) {
         perror("bind");
         return NULL;
     }
 
-    srv->port = port;
-    srv->listen_sock_fd = listen_sock_fd;
+    freeaddrinfo(servinfo);
+
+    // Initialise server structure
+    rpc_server *srv = malloc(sizeof(*srv));
+    if (!srv) {
+        perror("malloc");
+        return NULL;
+    }
+
+    // srv->port = port;
+    srv->sock_fd = sock_fd;
 
     srv->functions = malloc(INIT_SIZE * sizeof(*(srv->functions)));
-    if (!srv->functions) return NULL;
+    if (!srv->functions) {
+        perror("malloc");
+        return NULL;
+    }
 
     srv->num_func = 0;
     srv->cur_size = INIT_SIZE;
@@ -93,15 +116,19 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     srv->functions[i] = malloc(sizeof(func_t *));
     assert(srv->functions[i]);
 
+    // Create and store handle
     srv->functions[i]->handle = malloc(sizeof(rpc_handle *));
     assert(srv->functions[i]->handle);
     srv->functions[i]->handle->id = i;
 
+    // Store name
     srv->functions[i]->name = strdup(name);
     assert(srv->functions[i]->name);
 
+    // Store handler
     srv->functions[i]->handler = handler;
 
+    // Return function number
     return srv->num_func++;
 
 }
@@ -129,65 +156,45 @@ rpc_data *rpc_call_func(rpc_server *srv, rpc_handle *h, rpc_data *payload) {
 void rpc_serve_all(rpc_server *srv) {
 
     if (srv == NULL) return;    
-    
-    // /* Prepare request */
-    // char left_operand = 1;
-    // char right_operand = 127;
-    // rpc_data request_data = { 
-    //     .data1 = left_operand, .data2_len = 1, .data2 = &right_operand};
 
-
-    // rpc_handle *h = rpc_find_func(srv, "add2");
-    // rpc_data *response_data = rpc_call_func(srv, h, &request_data);
-
-    // /* Interpret response */
-    // assert(response_data->data2_len == 0);
-    // assert(response_data->data2 == NULL);
-    // printf("Result of adding %d and %d: %d\n", left_operand, right_operand,
-    //         response_data->data1);
-
-    // rpc_data_free(response_data);
-
-    socklen_t client_addr_len;
-    char str_addr[INET6_ADDRSTRLEN];
+    socklen_t client_addr_size;
+    // char ip[INET6_ADDRSTRLEN];
     int client_sock_fd = -1;
     struct sockaddr_in6 client_addr;
-    char client_message[2000];
+    char buffer[256];
 
     int queue_len = 10;
-    if (listen(srv->listen_sock_fd, queue_len) < 0) {
-        close(srv->listen_sock_fd);
+    if (listen(srv->sock_fd, queue_len) < 0) {
+        perror("listen");
+        // close(srv->sock_fd);
         return;
     }
 
-    client_addr_len = sizeof(client_addr);
+    client_addr_size = sizeof(client_addr);
 
-    /* Do TCP handshake with client */
-    client_sock_fd = accept(srv->listen_sock_fd, 
-            (struct sockaddr*)&client_addr,
-            &client_addr_len);
-
-    if (client_sock_fd == -1) {
-        perror("accept()");
-        close(srv->listen_sock_fd);
+    client_sock_fd =
+        accept(srv->sock_fd, (struct sockaddr*)&client_addr, &client_addr_size);
+    if (client_sock_fd < 0) {
+        perror("accept");
+        // close(srv->sock_fd);
         return;
     }
 
-    inet_ntop(AF_INET6, &(client_addr.sin6_addr), str_addr, sizeof(str_addr));
+    // inet_ntop(AF_INET6, &(client_addr.sin6_addr), ip, sizeof(ip));
 
     while(1) {
  
 		/* Wait for data from client */
-		if (recv(client_sock_fd, client_message, 2000, 0) < 0) {
+		if (recv(client_sock_fd, buffer, 256, 0) < 0) {
 			perror("recv()");
 			close(client_sock_fd);
 			continue;
 		}
 
-        puts(client_message);
+        puts(buffer);
  
 		/* Send response to client */
-		if (send(client_sock_fd, client_message, strlen(client_message), 0) < 0) {
+		if (send(client_sock_fd, buffer, strlen(buffer), 0) < 0) {
 			perror("send()");
 			close(client_sock_fd);
 			continue;
@@ -205,43 +212,68 @@ void rpc_serve_all(rpc_server *srv) {
 
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /****************************** CLIENT-SIDE API *******************************/
 
 struct rpc_client {
     /* Add variable(s) for client state */
-    char *srv_addr;
-    int port;
+    // char *srv_addr;
+    // int port;
     int sock_fd;
 };
 
-/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 */
+/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
+   Practical Week 9 */
 rpc_client *rpc_init_client(char *addr, int port) {
 
     if (addr == NULL) return NULL;
 
-    rpc_client *cl = malloc(sizeof(rpc_client));
-    if (!cl) return NULL;
-
     int sock_fd = -1;
-	struct sockaddr_in6 server_addr;
-    char buffer[256];
-    
-    sock_fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-	if (sock_fd == -1) {
-		perror("socket()");
-		return NULL;
+    struct addrinfo hints, *servinfo, *rp;
+
+    memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_INET6; // IPv6
+    hints.ai_socktype = SOCK_STREAM; // TCP
+    char service[5];
+    sprintf(service,"%d",port);
+    if (getaddrinfo(addr, service, &hints, &servinfo) < 0) {
+		perror("getaddrinfo");
+		exit(EXIT_FAILURE);
 	}
 
-    server_addr.sin6_family = AF_INET6;
-	inet_pton(AF_INET6, addr, &server_addr.sin6_addr);
-	server_addr.sin6_port = htons(port);
-
-	if (connect(sock_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-		perror("connect()");
+    for (rp = servinfo; rp != NULL; rp = rp->ai_next) {
+		sock_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if (sock_fd == -1) continue;
+		if (connect(sock_fd, rp->ai_addr, rp->ai_addrlen) != -1) break;
 		close(sock_fd);
-		return NULL;
 	}
 
+    if (rp == NULL) {
+		perror("Unable to connect");
+		exit(EXIT_FAILURE);
+	}
+
+    freeaddrinfo(servinfo);
+
+    char buffer[256];
     while (fgets(buffer, 255, stdin) != NULL) {
 
 		// Remove \n that was read by fgets
@@ -269,8 +301,12 @@ rpc_client *rpc_init_client(char *addr, int port) {
 		printf("Please enter the message: ");
 	}
 
-    cl->srv_addr = addr;
-    cl->port = port;
+    // Initialise client structure
+    rpc_client *cl = malloc(sizeof(rpc_client));
+    if (!cl) return NULL;
+
+    // cl->srv_addr = addr;
+    // cl->port = port;
     cl->sock_fd = sock_fd;
 
     return cl;

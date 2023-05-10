@@ -22,13 +22,11 @@ $(EXE_SERVER): $(OBJ_SERVER)
 $(EXE_CLIENT): $(OBJ_CLIENT)
 	$(CC) $(CFLAGS) -o $(EXE_CLIENT) $(OBJ_CLIENT) $(LIB)
 
-
-
 RPC_SYSTEM = rpc.o
 
 .PHONY: format all
 
-all: $(RPC_SYSTEM)
+all: $(RPC_SYSTEM) $(EXE_SERVER) $(EXE_CLIENT)
 
 $(RPC_SYSTEM): rpc.c rpc.h
 	$(CC) $(CFLAGS) -c -o $@ $<
