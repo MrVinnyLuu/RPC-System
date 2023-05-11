@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include "rpc.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +11,45 @@
 #include <assert.h>
 
 #define INIT_SIZE 10
+
+/********************************* SHARED API *********************************/
+
+rpc_data *rpc_str_to_data(char *s) {
+
+    rpc_data *d = malloc(sizeof(rpc_data *));
+    d->data1 = atoi(strtok(s, ","));
+    d->data2_len = atoi(strtok(s, ","));
+    d->data2 = strtok(s, ",");
+
+    return d;
+
+}
+
+char *rpc_data_to_str(rpc_data *d) {
+
+    char *s = malloc(1000);
+
+    sprintf(s, "%d,%ld", d->data1, d->data2_len);
+    strcat(s, d->data2);
+
+    return s;
+
+}
+
+void rpc_print_data(rpc_data *d) {
+    printf("%d,%ld,%p", d->data1, d->data2_len, d->data2);
+}
+
+void rpc_data_free(rpc_data *data) {
+    if (data == NULL) {
+        return;
+    }
+    if (data->data2 != NULL) {
+        free(data->data2);
+    }
+    free(data);
+}
+
 
 /****************************** SERVER-SIDE API *******************************/
 
@@ -65,7 +106,7 @@ rpc_server *rpc_init_server(int port) {
     freeaddrinfo(servinfo);
 
     // Initialise server structure
-    rpc_server *srv = malloc(sizeof(*srv));
+    rpc_server *srv = malloc(sizeof(rpc_server *));
     if (!srv) {
         perror("malloc");
         return NULL;
@@ -110,13 +151,9 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     srv->functions[i] = malloc(sizeof(func_t *));
     assert(srv->functions[i]);
 
-    // Create and store handle
-    srv->functions[i]->handle = malloc(sizeof(rpc_handle *));
-    assert(srv->functions[i]->handle);
-    srv->functions[i]->handle->id = i;
-
     // Store name
-    srv->functions[i]->name = strdup(name);
+    srv->functions[i]->name = malloc(strlen(name)+1);
+    strcpy(srv->functions[i]->name, name);
     assert(srv->functions[i]->name);
 
     // Store handler
@@ -139,9 +176,9 @@ int rpc_find_func(rpc_server *srv, char *name) {
 
 }
 
-rpc_data *rpc_call_func(rpc_server *srv, rpc_handle *h, rpc_data *payload) {
+rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
 
-    return srv->functions[h->id]->handler(payload);
+    return srv->functions[id]->handler(payload);
 
 }
 
@@ -175,24 +212,26 @@ void rpc_serve_all(rpc_server *srv) {
 
     while(1) {
          
-		int n;
-		if ((n = recv(client_sock_fd, buffer, 256, 0)) < 0) {
-			perror("recv()");
+		if (recv(client_sock_fd, buffer, 256, 0) < 0) {
+			// perror("recv()");
 			close(client_sock_fd);
 			continue;
 		}
+        puts(buffer);
 
-        char *header = strtok(buffer, ',');
+        char *header = strtok(buffer, ",");
 
         // Deal with FIND
         if (strncmp("FIND", header, 4) == 0) {
 
-            int id = rpc_find_func(srv, strtok(buffer, ','));
-            char *ret[10];
+            char *name = strtok(buffer, ",");
+
+            int id = rpc_find_func(srv, name);
+            char ret[10];
             sprintf(ret, "%d", id);
 
             // Respond with function id
-            if (send(client_sock_fd, ret, n, 0) < 0) {
+            if (send(client_sock_fd, ret, strlen(ret), 0) < 0) {
                 perror("send()");
                 close(client_sock_fd);
                 continue;
@@ -200,26 +239,26 @@ void rpc_serve_all(rpc_server *srv) {
 
         // Deal with CALL
         } else if (strncmp("CALL", header, 4) == 0) {
+            
+            int id = atoi(strtok(buffer, ","));
 
-            int id = atoi(strtok(buffer, ','));
-
-            rpc_data *payload;
-            payload->data1 = atoi(strtok(buffer, ','));
-            payload->data2_len = atoi(strtok(buffer, ','));
-            payload->data2 = strtok(buffer, ',');
+            rpc_data *payload = rpc_str_to_data(buffer);
 
             rpc_data *res = rpc_call_func(srv, id, payload);
-            
+            char *message = rpc_data_to_str(res);
+            // printf("%s", message);
+            // puts("*********************");
+            // puts(message);
 
             // Respond with rpc_data result as a string
-            if (send(client_sock_fd, ret, n, 0) < 0) {
+            if (send(client_sock_fd, message, strlen(message), 0) < 0) {
                 perror("send");
                 close(client_sock_fd);
                 continue;
             }
 
         } else {
-            perror("Unknown header");
+            fprintf(stderr, "Unknown header");
             close(client_sock_fd);
             continue;
         }
@@ -304,7 +343,7 @@ rpc_client *rpc_init_client(char *addr, int port) {
     freeaddrinfo(servinfo);
 
     // Initialise client structure
-    rpc_client *cl = malloc(sizeof(rpc_client));
+    rpc_client *cl = malloc(sizeof(rpc_client *));
     if (!cl) return NULL;
 
     // cl->srv_addr = addr;
@@ -319,51 +358,57 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     if (cl == NULL || name == NULL) return NULL;
 
-    // char *message = "hello world";
+    char header[6] = "FIND,";
+    char message[256];
+    strcpy(message, header);
+    strcat(message, name);
 
-    // /* Send data to server */
-	// if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
-	// 	perror("send");
-	// 	close(cl->sock_fd);
-	// 	return NULL;
-	// }
- 
-	// /* Wait for data from server */
-	// if (recv(cl->sock_fd, message, 2000, 0) < 0) {
-	// 	perror("recv()");
-	// 	close(cl->sock_fd);
-	// 	return NULL;
-	// }
-
-    char buffer[256];
-    while (fgets(buffer, 255, stdin) != NULL) {
-
-		// Remove \n that was read by fgets
-		buffer[strlen(buffer) - 1] = 0;
-
-		if (strcmp("GOODBYE-CLOSE-TCP", buffer) == 0) {
-			break;
-		}
-
-		// Send message to server
-		if (write(sock_fd, buffer, strlen(buffer)) < 0) {
-			perror("socket");
-			exit(EXIT_FAILURE);
-		}
-
-		// Read message from server
-		int n = read(sock_fd, buffer, 255);
-        if (n < 0) {
-			perror("read");
-			exit(EXIT_FAILURE);
-		}
-		// Null-terminate string
-		buffer[n] = '\0';
-		printf("%s\n", buffer);
-		printf("Please enter the message: ");
+	if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
+		perror("send");
+		close(cl->sock_fd);
+		return NULL;
+	}
+    
+	if (recv(cl->sock_fd, message, 256, 0) < 0) {
+		perror("recv()");
+		close(cl->sock_fd);
+		return NULL;
 	}
 
-    return NULL;
+    rpc_handle *h = malloc(sizeof(rpc_handle *));
+    assert(h);
+    h->id = atoi(message);
+    return h;
+
+    // char buffer[256];
+    // while (fgets(buffer, 255, stdin) != NULL) {
+
+	// 	// Remove \n that was read by fgets
+	// 	buffer[strlen(buffer) - 1] = 0;
+
+	// 	if (strcmp("GOODBYE-CLOSE-TCP", buffer) == 0) {
+	// 		break;
+	// 	}
+
+	// 	// Send message to server
+	// 	if (write(cl->sock_fd, buffer, strlen(buffer)) < 0) {
+	// 		perror("socket");
+	// 		exit(EXIT_FAILURE);
+	// 	}
+
+	// 	// Read message from server
+	// 	int n = read(cl->sock_fd, buffer, 255);
+    //     if (n < 0) {
+	// 		perror("read");
+	// 		exit(EXIT_FAILURE);
+	// 	}
+	// 	// Null-terminate string
+	// 	buffer[n] = '\0';
+	// 	printf("%s\n", buffer);
+	// 	printf("Please enter the message: ");
+	// }
+
+    // return NULL;
 
 }
 
@@ -371,7 +416,23 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
-    return NULL;
+    char *message = rpc_data_to_str(payload);
+
+    if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
+		perror("send");
+		close(cl->sock_fd);
+		return NULL;
+	}
+    
+	if (recv(cl->sock_fd, message, 256, 0) < 0) {
+		perror("recv()");
+		close(cl->sock_fd);
+		return NULL;
+	}
+
+    rpc_data *data = rpc_str_to_data(message);
+
+    return data;
 
 }
 
@@ -388,16 +449,4 @@ void rpc_close_client(rpc_client *cl) {
 
     return;
 
-}
-
-/********************************* SHARED API *********************************/
-
-void rpc_data_free(rpc_data *data) {
-    if (data == NULL) {
-        return;
-    }
-    if (data->data2 != NULL) {
-        free(data->data2);
-    }
-    free(data);
 }
