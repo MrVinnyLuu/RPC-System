@@ -27,10 +27,13 @@ rpc_data *rpc_str_to_data(char *s) {
 
 char *rpc_data_to_str(rpc_data *d) {
 
-    char *s = malloc(1000);
+    char *s = (char*)malloc(sizeof(d));
 
-    sprintf(s, "%d,%ld", d->data1, d->data2_len);
-    strcat(s, d->data2);
+    memcpy(s, (const unsigned char*)&d, sizeof(d));
+
+    for(int i=0;i<sizeof(d);i++) printf("%02X ",s[i]);
+    puts("***********************");
+    puts(s);
 
     return s;
 
@@ -224,7 +227,7 @@ void rpc_serve_all(rpc_server *srv) {
         // Deal with FIND
         if (strncmp("FIND", header, 4) == 0) {
 
-            char *name = strtok(buffer, ",");
+            char *name = strtok(NULL, ",");
 
             int id = rpc_find_func(srv, name);
             char ret[10];
@@ -240,7 +243,7 @@ void rpc_serve_all(rpc_server *srv) {
         // Deal with CALL
         } else if (strncmp("CALL", header, 4) == 0) {
             
-            int id = atoi(strtok(buffer, ","));
+            int id = atoi(strtok(NULL, ","));
 
             rpc_data *payload = rpc_str_to_data(buffer);
 
@@ -369,46 +372,19 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		return NULL;
 	}
     
-	if (recv(cl->sock_fd, message, 256, 0) < 0) {
+    char ret[256];
+	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
 		perror("recv()");
 		close(cl->sock_fd);
 		return NULL;
 	}
 
+    puts(ret);
+
     rpc_handle *h = malloc(sizeof(rpc_handle *));
     assert(h);
-    h->id = atoi(message);
+    h->id = atoi(ret);
     return h;
-
-    // char buffer[256];
-    // while (fgets(buffer, 255, stdin) != NULL) {
-
-	// 	// Remove \n that was read by fgets
-	// 	buffer[strlen(buffer) - 1] = 0;
-
-	// 	if (strcmp("GOODBYE-CLOSE-TCP", buffer) == 0) {
-	// 		break;
-	// 	}
-
-	// 	// Send message to server
-	// 	if (write(cl->sock_fd, buffer, strlen(buffer)) < 0) {
-	// 		perror("socket");
-	// 		exit(EXIT_FAILURE);
-	// 	}
-
-	// 	// Read message from server
-	// 	int n = read(cl->sock_fd, buffer, 255);
-    //     if (n < 0) {
-	// 		perror("read");
-	// 		exit(EXIT_FAILURE);
-	// 	}
-	// 	// Null-terminate string
-	// 	buffer[n] = '\0';
-	// 	printf("%s\n", buffer);
-	// 	printf("Please enter the message: ");
-	// }
-
-    // return NULL;
 
 }
 
@@ -416,7 +392,11 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
-    char *message = rpc_data_to_str(payload);
+    char header[6] = "CALL,";
+    char message[256];
+    strcpy(message, header);
+    char *s = rpc_data_to_str(payload);
+    strcat(message, s);
 
     if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
 		perror("send");
@@ -424,13 +404,16 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		return NULL;
 	}
     
-	if (recv(cl->sock_fd, message, 256, 0) < 0) {
+    char ret[256];
+	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
 		perror("recv()");
 		close(cl->sock_fd);
 		return NULL;
 	}
 
-    rpc_data *data = rpc_str_to_data(message);
+    puts(ret);
+
+    rpc_data *data = rpc_str_to_data(ret);
 
     return data;
 
