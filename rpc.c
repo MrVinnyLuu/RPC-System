@@ -14,33 +14,30 @@
 
 /********************************* SHARED API *********************************/
 
-rpc_data *rpc_str_to_data(char *s) {
+rpc_data *rpc_bytes_to_data(char *s) {
 
     rpc_data *d = malloc(sizeof(rpc_data *));
-    d->data1 = atoi(strtok(s, ","));
-    d->data2_len = atoi(strtok(s, ","));
-    d->data2 = strtok(s, ",");
+    // d->data1 = atoi(strtok(s, ","));
+    // d->data2_len = atoi(strtok(NULL, ","));
+    // d->data2 = strtok(NULL, ",");
+    d->data1 = 1;
+    d->data2_len = 1;
+    char right = 127;
+    d->data2 = &right;
 
     return d;
 
 }
 
-char *rpc_data_to_str(rpc_data *d) {
+char *rpc_data_to_bytes(rpc_data *d) {
 
-    char *s = (char*)malloc(sizeof(d));
+    char *s = malloc(100);
 
-    memcpy(s, (const unsigned char*)&d, sizeof(d));
-
-    for(int i=0;i<sizeof(d);i++) printf("%02X ",s[i]);
-    puts("***********************");
-    puts(s);
+    sprintf(s,"%d,%ld,",d->data1,d->data2_len);
+    // strcat(s,d->data2);
 
     return s;
 
-}
-
-void rpc_print_data(rpc_data *d) {
-    printf("%d,%ld,%p", d->data1, d->data2_len, d->data2);
 }
 
 void rpc_data_free(rpc_data *data) {
@@ -216,10 +213,11 @@ void rpc_serve_all(rpc_server *srv) {
     while(1) {
          
 		if (recv(client_sock_fd, buffer, 256, 0) < 0) {
-			// perror("recv()");
+			perror("recv()");
 			close(client_sock_fd);
 			continue;
 		}
+        puts("Received");
         puts(buffer);
 
         char *header = strtok(buffer, ",");
@@ -240,18 +238,19 @@ void rpc_serve_all(rpc_server *srv) {
                 continue;
             }
 
+            puts("Sent");
+            puts(ret);
+
         // Deal with CALL
         } else if (strncmp("CALL", header, 4) == 0) {
             
             int id = atoi(strtok(NULL, ","));
 
-            rpc_data *payload = rpc_str_to_data(buffer);
+            rpc_data *payload = rpc_bytes_to_data(buffer);
 
             rpc_data *res = rpc_call_func(srv, id, payload);
-            char *message = rpc_data_to_str(res);
-            // printf("%s", message);
-            // puts("*********************");
-            // puts(message);
+            fprintf(stdout, "%d", res->data1);
+            char *message = rpc_data_to_bytes(res);
 
             // Respond with rpc_data result as a string
             if (send(client_sock_fd, message, strlen(message), 0) < 0) {
@@ -259,6 +258,9 @@ void rpc_serve_all(rpc_server *srv) {
                 close(client_sock_fd);
                 continue;
             }
+
+            puts("Sent");
+            puts(message);
 
         } else {
             fprintf(stderr, "Unknown header");
@@ -372,6 +374,9 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		return NULL;
 	}
     
+    puts("Sent");
+    puts(message);
+
     char ret[256];
 	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
 		perror("recv()");
@@ -379,6 +384,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		return NULL;
 	}
 
+    puts("Received");
     puts(ret);
 
     rpc_handle *h = malloc(sizeof(rpc_handle *));
@@ -395,7 +401,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     char header[6] = "CALL,";
     char message[256];
     strcpy(message, header);
-    char *s = rpc_data_to_str(payload);
+    char *s = rpc_data_to_bytes(payload);
     strcat(message, s);
 
     if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
@@ -403,7 +409,10 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		close(cl->sock_fd);
 		return NULL;
 	}
-    
+
+    puts("Sent");
+    puts(message);
+
     char ret[256];
 	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
 		perror("recv()");
@@ -411,9 +420,15 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		return NULL;
 	}
 
+    puts("Received");
     puts(ret);
 
-    rpc_data *data = rpc_str_to_data(ret);
+    rpc_data *data = rpc_bytes_to_data(ret);
+
+    // rpc_data *d = malloc(sizeof(rpc_data *));
+    // d->data1 = 1;
+    // d->data2_len = 0;
+    // d->data2 = NULL;
 
     return data;
 
