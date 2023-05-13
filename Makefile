@@ -13,8 +13,8 @@ SRC_CLIENT = rpc.c client.c
 OBJ_SERVER = $(SRC_SERVER:.c=.o)
 OBJ_CLIENT = $(SRC_CLIENT:.c=.o)
 
-EXE_SERVER = server
-EXE_CLIENT = client
+EXE_SERVER = rpc-server
+EXE_CLIENT = rpc-client
 
 $(EXE_SERVER): $(OBJ_SERVER)
 	$(CC) $(CFLAGS) -o $(EXE_SERVER) $(OBJ_SERVER) $(LIB)
