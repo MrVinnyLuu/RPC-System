@@ -3,4 +3,5 @@ s
 rpc-client
 c
 *.o
+*.a
 test*
