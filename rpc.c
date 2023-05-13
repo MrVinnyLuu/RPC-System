@@ -380,33 +380,33 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     if (cl == NULL || name == NULL) return NULL;
 
-    // char message[256];
-    // sprintf(message, "FIND,%s", name);
+    char message[256];
+    sprintf(message, "FIND,%s", name);
 
-	// if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
-	// 	perror("send");
-	// 	close(cl->sock_fd);
-	// 	return NULL;
-	// }
+	if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
+		perror("send");
+		close(cl->sock_fd);
+		return NULL;
+	}
     
-    // // puts("Sent");
-    // // puts(message);
+    // puts("Sent");
+    // puts(message);
 
-    // int id;
-	// if (recv(cl->sock_fd, &id, 256, 0) < 0) {
-	// 	perror("recv");
-	// 	close(cl->sock_fd);
-	// 	return NULL;
-	// }
+    int id;
+	if (recv(cl->sock_fd, &id, 256, 0) < 0) {
+		perror("recv");
+		close(cl->sock_fd);
+		return NULL;
+	}
 
-    // // puts("Received");
-    // // putchar(id);
+    // puts("Received");
+    // putchar(id);
 
-    // if (id == -1) return NULL;
+    if (id == -1) return NULL;
 
     rpc_handle *h = malloc(sizeof(rpc_handle *));
     assert(h);
-    h->id = 0;
+    h->id = id;
     return h;
 
 }
