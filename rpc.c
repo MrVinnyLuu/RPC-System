@@ -14,32 +14,6 @@
 
 /********************************* SHARED API *********************************/
 
-// rpc_data *rpc_bytes_to_data(char *s) {
-
-//     rpc_data *d = malloc(sizeof(rpc_data *));
-//     // d->data1 = atoi(strtok(s, ","));
-//     // d->data2_len = atoi(strtok(NULL, ","));
-//     // d->data2 = strtok(NULL, ",");
-//     d->data1 = 1;
-//     d->data2_len = 1;
-//     char right = 127;
-//     d->data2 = &right;
-
-//     return d;
-
-// }
-
-// char *rpc_data_to_bytes(rpc_data *d) {
-
-//     char *s = malloc(100);
-
-//     sprintf(s,"%d,%ld,",d->data1,d->data2_len);
-//     // strcat(s,d->data2);
-
-//     return s;
-
-// }
-
 void rpc_data_free(rpc_data *data) {
     if (data == NULL) {
         return;
@@ -177,9 +151,11 @@ int rpc_find_func(rpc_server *srv, char *name) {
 }
 
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
-
-    return srv->functions[id]->handler(payload);
-
+    if (id >= srv->num_func) {
+        return NULL;
+    } else {
+        return srv->functions[id]->handler(payload);
+    }
 }
 
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
@@ -276,7 +252,12 @@ void rpc_serve_all(rpc_server *srv) {
             rpc_data *res = rpc_call_func(srv, id, payload);
 
             char *message = malloc(100);
-            sprintf(message,"%d,%ld",res->data1,res->data2_len);
+
+            if (res != NULL) {
+                sprintf(message,"%d,%ld",res->data1,res->data2_len);
+            } else {
+                message = "ERROR";
+            }
 
             if (send(client_sock_fd, message, strlen(message), 0) < 0) {
                 perror("send");
@@ -287,7 +268,7 @@ void rpc_serve_all(rpc_server *srv) {
             // puts("Sent");
             // puts(message);
 
-            if (res->data2_len > 0) {
+            if (res && res->data2_len > 0) {
                 if (send(client_sock_fd, res->data2, res->data2_len, 0) < 0) {
                     perror("send");
                     // close(client_sock_fd);
@@ -399,10 +380,6 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     if (cl == NULL || name == NULL) return NULL;
 
-    // char req[6] = "FIND,";
-    // char message[256];
-    // strcpy(message, req);
-    // strcat(message, name);
     char message[256];
     sprintf(message, "FIND,%s", name);
 
@@ -425,6 +402,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     // puts("Received");
     // putchar(id);
 
+    if (id == -1) return NULL;
+
     rpc_handle *h = malloc(sizeof(rpc_handle *));
     assert(h);
     h->id = id;
@@ -436,11 +415,6 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
-    // char req[6] = "CALL,";
-    // char message[256];
-    // strcpy(message, req);
-    // char *s = rpc_data_to_bytes(payload);
-    // strcat(message, s);
     char *message = malloc(100);
     sprintf(message, "CALL,%d,%d,%ld",
             h->id, payload->data1, payload->data2_len);
@@ -474,6 +448,8 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     // puts("Received");
     // puts(ret);
+
+    if (strcmp(ret, "ERROR") == 0) return NULL;
 
     rpc_data *res = malloc(sizeof(rpc_data *));
     assert(res);
