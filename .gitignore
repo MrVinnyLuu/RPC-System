@@ -1,6 +1,6 @@
-server
+rpc-server
 s
-client
+rpc-client
 c
 *.o
 test*
