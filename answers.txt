@@ -31,16 +31,19 @@ If hosts use different endian byte orders, information on one host will not matc
 Two types of requests:
 FIND
 Used to find a function given its name
-Responds with an integer id (or -1 if not found)
-Usage: "FIND,<func_name>"
-Eg: "FIND,add2"
+Responds with <id:int> (or -1 if not found)
+Usage: "FIND,<func_name:str>"
+Eg: client sends: "FIND,add2"
+    server responds: "0"
+
 CALL
 Used to call a function given its integer id
-Responds with "<data1> <data2_len> <data2>" (or NULL if not found)
-Usage: "CALL <id> <data1> <data2_len> <data2>"
-Eg: "CALL,0,1,1,127"
+Responds with "<data1>,<data2_len>" followed by "<data2>" (or NULL if not found)
+Usage: "CALL,<id:int>,<data1:int>,<data2_len:int>" followed by "<data2>"
+Eg: client sends: "CALL,0,1,1" followed by "127"
+    server responds: "128,0" [no <data2> since <data2_len> is zero]
 
-TCP should be used.
+TCP should be used as the transport protocol.
 TCP
 Pros: Reliable, most commonly used
 Cons: Requires connections

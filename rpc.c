@@ -14,31 +14,31 @@
 
 /********************************* SHARED API *********************************/
 
-rpc_data *rpc_bytes_to_data(char *s) {
+// rpc_data *rpc_bytes_to_data(char *s) {
 
-    rpc_data *d = malloc(sizeof(rpc_data *));
-    // d->data1 = atoi(strtok(s, ","));
-    // d->data2_len = atoi(strtok(NULL, ","));
-    // d->data2 = strtok(NULL, ",");
-    d->data1 = 1;
-    d->data2_len = 1;
-    char right = 127;
-    d->data2 = &right;
+//     rpc_data *d = malloc(sizeof(rpc_data *));
+//     // d->data1 = atoi(strtok(s, ","));
+//     // d->data2_len = atoi(strtok(NULL, ","));
+//     // d->data2 = strtok(NULL, ",");
+//     d->data1 = 1;
+//     d->data2_len = 1;
+//     char right = 127;
+//     d->data2 = &right;
 
-    return d;
+//     return d;
 
-}
+// }
 
-char *rpc_data_to_bytes(rpc_data *d) {
+// char *rpc_data_to_bytes(rpc_data *d) {
 
-    char *s = malloc(100);
+//     char *s = malloc(100);
 
-    sprintf(s,"%d,%ld,",d->data1,d->data2_len);
-    // strcat(s,d->data2);
+//     sprintf(s,"%d,%ld,",d->data1,d->data2_len);
+//     // strcat(s,d->data2);
 
-    return s;
+//     return s;
 
-}
+// }
 
 void rpc_data_free(rpc_data *data) {
     if (data == NULL) {
@@ -213,46 +213,65 @@ void rpc_serve_all(rpc_server *srv) {
     while(1) {
          
 		if (recv(client_sock_fd, buffer, 256, 0) < 0) {
-			perror("recv()");
+			perror("recv");
 			close(client_sock_fd);
 			continue;
 		}
         puts("Received");
         puts(buffer);
 
-        char *header = strtok(buffer, ",");
+        char *req = strtok(buffer, ",");
 
         // Deal with FIND
-        if (strncmp("FIND", header, 4) == 0) {
+        if (strncmp("FIND", req, 4) == 0) {
 
             char *name = strtok(NULL, ",");
 
             int id = rpc_find_func(srv, name);
-            char ret[10];
-            sprintf(ret, "%d", id);
 
             // Respond with function id
-            if (send(client_sock_fd, ret, strlen(ret), 0) < 0) {
-                perror("send()");
+            if (send(client_sock_fd, &id, sizeof(int), 0) < 0) {
+                perror("send");
                 close(client_sock_fd);
                 continue;
             }
 
             puts("Sent");
-            puts(ret);
+            putchar(id);
 
         // Deal with CALL
-        } else if (strncmp("CALL", header, 4) == 0) {
+        } else if (strncmp("CALL", req, 4) == 0) {
             
             int id = atoi(strtok(NULL, ","));
 
-            rpc_data *payload = rpc_bytes_to_data(buffer);
+            rpc_data *payload = malloc(sizeof(rpc_data *));
+            assert(payload);
+
+            payload->data1 = atoi(strtok(NULL, ","));
+            payload->data2_len = atoi(strtok(NULL, ","));
+
+            if (payload->data2_len > 0) {
+
+                payload->data2 = malloc(payload->data2_len);
+
+                if (recv(client_sock_fd, 
+                         payload->data2, payload->data2_len, 0) < 0) {
+
+                    perror("recv");
+                    close(client_sock_fd);
+                    continue;
+
+                }
+
+            } else {
+                payload->data2 = NULL;
+            }
 
             rpc_data *res = rpc_call_func(srv, id, payload);
-            fprintf(stdout, "%d", res->data1);
-            char *message = rpc_data_to_bytes(res);
 
-            // Respond with rpc_data result as a string
+            char *message = malloc(100);
+            sprintf(message,"%d,%ld,",res->data1,res->data2_len);
+
             if (send(client_sock_fd, message, strlen(message), 0) < 0) {
                 perror("send");
                 close(client_sock_fd);
@@ -262,8 +281,19 @@ void rpc_serve_all(rpc_server *srv) {
             puts("Sent");
             puts(message);
 
+            if (res->data2_len > 0) {
+                if (send(client_sock_fd, res->data2, res->data2_len, 0) < 0) {
+                    perror("send");
+                    close(client_sock_fd);
+                    continue;
+                }
+
+                puts("Sent");
+                puts(res->data2);
+            }
+
         } else {
-            fprintf(stderr, "Unknown header");
+            fprintf(stderr, "Unknown request: %s", buffer);
             close(client_sock_fd);
             continue;
         }
@@ -363,10 +393,12 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     if (cl == NULL || name == NULL) return NULL;
 
-    char header[6] = "FIND,";
+    // char req[6] = "FIND,";
+    // char message[256];
+    // strcpy(message, req);
+    // strcat(message, name);
     char message[256];
-    strcpy(message, header);
-    strcat(message, name);
+    sprintf(message, "FIND,%s", name);
 
 	if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
 		perror("send");
@@ -377,19 +409,19 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     puts("Sent");
     puts(message);
 
-    char ret[256];
-	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
-		perror("recv()");
+    int id;
+	if (recv(cl->sock_fd, &id, 256, 0) < 0) {
+		perror("recv");
 		close(cl->sock_fd);
 		return NULL;
 	}
 
     puts("Received");
-    puts(ret);
+    putchar(id);
 
     rpc_handle *h = malloc(sizeof(rpc_handle *));
     assert(h);
-    h->id = atoi(ret);
+    h->id = id;
     return h;
 
 }
@@ -398,11 +430,14 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
-    char header[6] = "CALL,";
-    char message[256];
-    strcpy(message, header);
-    char *s = rpc_data_to_bytes(payload);
-    strcat(message, s);
+    // char req[6] = "CALL,";
+    // char message[256];
+    // strcpy(message, req);
+    // char *s = rpc_data_to_bytes(payload);
+    // strcat(message, s);
+    char *message = malloc(100);
+    sprintf(message, "CALL,%d,%d,%ld",
+            h->id, payload->data1, payload->data2_len);
 
     if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
 		perror("send");
@@ -413,6 +448,17 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     puts("Sent");
     puts(message);
 
+    if (payload->data2_len > 0) {
+        if (send(cl->sock_fd, payload->data2, payload->data2_len, 0) < 0) {
+            perror("send");
+            close(cl->sock_fd);
+            return NULL;
+        }
+        puts("Sent");
+        puts(payload->data2);
+    }
+
+    
     char ret[256];
 	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
 		perror("recv()");
@@ -423,14 +469,27 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     puts("Received");
     puts(ret);
 
-    rpc_data *data = rpc_bytes_to_data(ret);
+    rpc_data *res = malloc(sizeof(rpc_data *));
+    assert(res);
 
-    // rpc_data *d = malloc(sizeof(rpc_data *));
-    // d->data1 = 1;
-    // d->data2_len = 0;
-    // d->data2 = NULL;
+    res->data1 = atoi(strtok(ret, ","));
+    res->data2_len = atoi(strtok(NULL, ","));
 
-    return data;
+    if (res->data2_len > 0) {
+
+        res->data2 = malloc(res->data2_len);
+
+        if (recv(cl->sock_fd, res->data2, res->data2_len, 0) < 0) {
+            perror("recv");
+            close(cl->sock_fd);
+            return NULL;
+        }
+
+    } else {
+        res->data2 = NULL;
+    }
+
+    return res;
 
 }
 
