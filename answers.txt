@@ -32,14 +32,14 @@ Two types of requests:
 FIND
 Used to find a function given its name
 Responds with <id:int> (or -1 if not found)
-Usage: "FIND,<func_name:str>"
-Eg: client sends: "FIND,add2"
+Usage: "FIND,<name_len:int>,<func_name:str>"
+Eg: client sends: "FIND,4,add2"
     server responds: "0"
 
 CALL
 Used to call a function given its integer id
 Responds with "<data1>,<data2_len>" followed by "<data2>" (or NULL if not found)
-Usage: "CALL,<id:int>,<data1:int>,<data2_len:int>" followed by "<data2>"
+Usage: "CALL,<id:int>,<data1:int>,<data2_len:int>" followed by "<data2>" if applicable
 Eg: client sends: "CALL,0,1,1" followed by "127"
     server responds: "128,0" [no <data2> since <data2_len> is zero]
 

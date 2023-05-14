@@ -12,6 +12,7 @@
 
 #define INIT_SIZE 10
 #define QUEUE_LEN 10
+#define DEBUG 0
 
 /********************************* SHARED API *********************************/
 
@@ -134,7 +135,7 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     // Store handler
     srv->functions[i]->handler = handler;
 
-    printf("Added func: %s at %d\n", name, i);
+    if (DEBUG) printf("Registered func: %s at %d\n", name, i);
 
     // Return function number
     return srv->num_func++;
@@ -142,6 +143,8 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 }
 
 int rpc_find_func(rpc_server *srv, char *name) {
+
+    if (DEBUG) printf("Finding func: %s\n", name);
 
     for (int i = 0; i < srv->num_func; i++) {
         if (strcmp(srv->functions[i]->name, name) == 0) {
@@ -154,6 +157,7 @@ int rpc_find_func(rpc_server *srv, char *name) {
 }
 
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
+    if (DEBUG) printf("Calling func at %d\n", id);
     if (id >= srv->num_func) {
         return NULL;
     } else {
@@ -200,9 +204,12 @@ void rpc_serve_all(rpc_server *srv) {
 
         if (n == 0) continue;
 
-        puts("Received");
-        puts(buffer);
-        puts("\n");
+        if (DEBUG) {
+            puts("Received");
+            puts(buffer);
+            puts("\n");
+        }
+        
 
         char *req = strtok(buffer, ",");
 
@@ -222,11 +229,13 @@ void rpc_serve_all(rpc_server *srv) {
                 continue;
             }
 
-            puts("Sent");
-            char s[5];
-            sprintf(s, "%d", id);
-            puts(s);
-            puts("\n");
+            if (DEBUG) {
+                puts("Sent");
+                char s[5];
+                sprintf(s, "%d", id);
+                puts(s);
+                puts("\n");
+            }
 
         // Deal with CALL
         } else if (req && strncmp("CALL", req, 4) == 0) {
@@ -252,9 +261,11 @@ void rpc_serve_all(rpc_server *srv) {
 
                 }
 
-                puts("Received");
-                puts(payload->data2);
-                puts("\n");
+                if (DEBUG) {
+                    puts("Received");
+                    puts(payload->data2);
+                    puts("\n");
+                }
 
             } else {
                 payload->data2 = NULL;
@@ -277,10 +288,11 @@ void rpc_serve_all(rpc_server *srv) {
                 close(client_sock_fd);
                 continue;
             }
-
-            puts("Sent");
-            puts(message);
-            puts("\n");
+            if (DEBUG) {
+                puts("Sent");
+                puts(message);
+                puts("\n");
+            }
 
             if (res && res->data2_len > 0) {
                 if (send(client_sock_fd, res->data2, res->data2_len, 0) < 0) {
@@ -288,10 +300,11 @@ void rpc_serve_all(rpc_server *srv) {
                     close(client_sock_fd);
                     continue;
                 }
-
-                puts("Sent");
-                puts(res->data2);
-                puts("\n");
+                if (DEBUG) {
+                    puts("Sent");
+                    puts(res->data2);
+                    puts("\n");
+                }
             }
 
         } else {
@@ -405,24 +418,24 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		close(cl->sock_fd);
 		return NULL;
 	}
-    
-    puts("Sent");
-    puts(message);
-    puts("\n");
-
+    if (DEBUG) {
+        puts("Sent");
+        puts(message);
+        puts("\n");
+    }
     int id;
 	if (recv(cl->sock_fd, &id, 64, 0) < 0) {
 		perror("recv");
 		close(cl->sock_fd);
 		return NULL;
 	}
-
-    puts("Received");
-    char s[5];
-    sprintf(s, "%d", id);
-    puts(s);
-    puts("\n");
-
+    if (DEBUG) {
+        puts("Received");
+        char s[5];
+        sprintf(s, "%d", id);
+        puts(s);
+        puts("\n");
+    }
     if (id == -1) return NULL;
 
     rpc_handle *h = malloc(sizeof(rpc_handle *));
@@ -447,10 +460,11 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		close(cl->sock_fd);
 		return NULL;
 	}
-
-    puts("Sent");
-    puts(message);
-    puts("\n");
+    if (DEBUG) {
+        puts("Sent");
+        puts(message);
+        puts("\n");
+    }
 
     if (payload->data2_len > 0) {
         if (send(cl->sock_fd, payload->data2, payload->data2_len, 0) < 0) {
@@ -458,9 +472,11 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
             close(cl->sock_fd);
             return NULL;
         }
-        puts("Sent");
-        puts(payload->data2);
-        puts("\n");
+        if (DEBUG) {
+            puts("Sent");
+            puts(payload->data2);
+            puts("\n");
+        }
     }
 
     
@@ -470,10 +486,11 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		close(cl->sock_fd);
 		return NULL;
 	}
-
-    puts("Received");
-    puts(ret);
-    puts("\n");
+    if (DEBUG) {
+        puts("Received");
+        puts(ret);
+        puts("\n");
+    }
 
     if (strcmp(ret, "ERROR") == 0) return NULL;
 
@@ -492,10 +509,11 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
             close(cl->sock_fd);
             return NULL;
         }
-
-        puts("Received");
-        puts(res->data2);
-        puts("\n");
+        if (DEBUG) {
+            puts("Received");
+            puts(res->data2);
+            puts("\n");
+        }
 
     } else {
         res->data2 = NULL;
