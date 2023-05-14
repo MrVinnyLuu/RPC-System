@@ -134,6 +134,8 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     // Store handler
     srv->functions[i]->handler = handler;
 
+    printf("Added func: %s at %d\n", name, i);
+
     // Return function number
     return srv->num_func++;
 
@@ -394,6 +396,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     char message[256];
     sprintf(message, "FIND,%s", name);
 
+    message[strlen(message)] = '\0';
+
 	if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
 		perror("send");
 		close(cl->sock_fd);
@@ -405,7 +409,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     puts("\n");
 
     int id;
-	if (recv(cl->sock_fd, &id, 256, 0) < 0) {
+	if (recv(cl->sock_fd, &id, 64, 0) < 0) {
 		perror("recv");
 		close(cl->sock_fd);
 		return NULL;
@@ -433,6 +437,8 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     char *message = malloc(100);
     sprintf(message, "CALL,%d,%d,%ld",
             h->id, payload->data1, payload->data2_len);
+
+    message[strlen(message)] = '\0';
 
     if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
 		perror("send");
