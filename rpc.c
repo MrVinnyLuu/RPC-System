@@ -199,8 +199,8 @@ void rpc_serve_all(rpc_server *srv) {
 
         if (n == 0) continue;
 
-        // puts("Received");
-        // puts(buffer);
+        puts("Received");
+        puts(buffer);
 
         char *req = strtok(buffer, ",");
 
@@ -218,8 +218,8 @@ void rpc_serve_all(rpc_server *srv) {
                 continue;
             }
 
-            // puts("Sent");
-            // putchar(id);
+            puts("Sent");
+            putchar(id);
 
         // Deal with CALL
         } else if (req && strncmp("CALL", req, 4) == 0) {
@@ -259,14 +259,16 @@ void rpc_serve_all(rpc_server *srv) {
                 message = "ERROR";
             }
 
+            message[strlen(message)] = '\0';
+
             if (send(client_sock_fd, message, strlen(message), 0) < 0) {
                 perror("send");
                 // close(client_sock_fd);
                 continue;
             }
 
-            // puts("Sent");
-            // puts(message);
+            puts("Sent");
+            puts(message);
 
             if (res && res->data2_len > 0) {
                 if (send(client_sock_fd, res->data2, res->data2_len, 0) < 0) {
@@ -275,8 +277,8 @@ void rpc_serve_all(rpc_server *srv) {
                     continue;
                 }
 
-                // puts("Sent");
-                // puts(res->data2);
+                puts("Sent");
+                puts(res->data2);
             }
 
         } else {
@@ -389,8 +391,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		return NULL;
 	}
     
-    // puts("Sent");
-    // puts(message);
+    puts("Sent");
+    puts(message);
 
     int id;
 	if (recv(cl->sock_fd, &id, 256, 0) < 0) {
@@ -399,8 +401,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		return NULL;
 	}
 
-    // puts("Received");
-    // putchar(id);
+    puts("Received");
+    putchar(id);
 
     if (id == -1) return NULL;
 
@@ -425,8 +427,8 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		return NULL;
 	}
 
-    // puts("Sent");
-    // puts(message);
+    puts("Sent");
+    puts(message);
 
     if (payload->data2_len > 0) {
         if (send(cl->sock_fd, payload->data2, payload->data2_len, 0) < 0) {
@@ -434,20 +436,20 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
             close(cl->sock_fd);
             return NULL;
         }
-        // puts("Sent");
-        // puts(payload->data2);
+        puts("Sent");
+        puts(payload->data2);
     }
 
     
-    char ret[256];
+    char *ret = malloc(100);
 	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
 		perror("recv()");
 		close(cl->sock_fd);
 		return NULL;
 	}
 
-    // puts("Received");
-    // puts(ret);
+    puts("Received");
+    puts(ret);
 
     if (strcmp(ret, "ERROR") == 0) return NULL;
 

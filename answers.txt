@@ -45,9 +45,9 @@ Eg: client sends: "CALL,0,1,1" followed by "127"
 
 TCP should be used as the transport protocol.
 TCP
-Pros: Reliable, most commonly used
-Cons: Requires connections
+Pros: Reliable
+Cons: Requires connections and therefore more overhead
 
 UDP
-Pros: Connectionless
+Pros: Connectionless and therefore less overhead
 Cons: Unreliable
