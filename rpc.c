@@ -209,7 +209,9 @@ void rpc_serve_all(rpc_server *srv) {
         // Deal with FIND
         if (req && strncmp("FIND", req, 4) == 0) {
 
+            int len = atoi(strtok(NULL, ","));
             char *name = strtok(NULL, ",");
+            name[len] = '\0';
 
             int id = rpc_find_func(srv, name);
 
@@ -394,7 +396,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     if (cl == NULL || name == NULL) return NULL;
 
     char message[256];
-    sprintf(message, "FIND,%s", name);
+    sprintf(message, "FIND,%ld,%s", strlen(name),name);
 
     message[strlen(message)] = '\0';
 
