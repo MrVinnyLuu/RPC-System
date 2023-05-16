@@ -107,15 +107,15 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     if (!(srv && name && handler)) return -1;
 
     // Ensure there's space in the array
-    // if (srv->num_func == srv->cur_size) {
-    //     srv->cur_size *= 2;
-    //     srv->functions = realloc(srv->functions,
-    //                              srv->cur_size * sizeof(*(srv->functions)));
-    //     if (!srv->functions) {
-    //         perror("realloc");
-    //         return -1;
-    //     }
-    // }
+    if (srv->num_func == srv->cur_size) {
+        srv->cur_size *= 2;
+        srv->functions = realloc(srv->functions,
+                                 srv->cur_size * sizeof(*(srv->functions)));
+        if (!srv->functions) {
+            perror("realloc");
+            return -1;
+        }
+    }
 
     // Check for duplicate named functions
     int i;
@@ -240,10 +240,10 @@ void rpc_serve_all(rpc_server *srv) {
             // name[len] = '\0';
 
             int id = rpc_find_func(srv, name); /////////////////////////////////////////////////////////////////////////
-            uint32_t bytes = htonl(id);
+            uint64_t bytes = htobe64(id);
 
             // Respond with function id
-            if (send(client_sock_fd, &bytes, sizeof(uint32_t), 0) < 0) {
+            if (send(client_sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
                 perror("send");
                 close(client_sock_fd);
                 continue;
@@ -460,8 +460,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
         puts("\n");
     }
 
-    uint32_t id; ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	if (recv(cl->sock_fd, &id, sizeof(uint32_t), 0) < 0) {
+    uint64_t id; ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (recv(cl->sock_fd, &id, sizeof(uint64_t), 0) < 0) {
 		perror("recv");
 		close(cl->sock_fd);
 		return NULL;
@@ -469,7 +469,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     if (DEBUG) {
         puts("Received");
         char s[5];
-        sprintf(s, "%d", id);
+        sprintf(s, "%ld", id);
         puts(s);
         puts("\n");
     }
@@ -480,7 +480,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
         perror("malloc");
         return NULL;
     }
-    h->id = ntohl(id);
+    h->id = be64toh(id);
     return h;
 
 }
