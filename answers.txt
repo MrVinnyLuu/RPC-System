@@ -31,17 +31,27 @@ If hosts use different endian byte orders, information on one host will not matc
 Two types of requests:
 FIND
 Used to find a function given its name
-Responds with <id:int> (or -1 if not found)
-Usage: "FIND,<name_len:int>,<func_name:str>"
-Eg: client sends: "FIND,4,add2"
-    server responds: "0"
+- Client sends 4 bytes: "FIND"
+- Client sends 4 byte string length of function name in network byte ordering
+- Client sends function name string
+On success:
+- Server sends 4 byte function id in network byte ordering
+On failure:
+- Server sends 4 byte -1 in network byte ordering
 
 CALL
 Used to call a function given its integer id
-Responds with "<data1>,<data2_len>" followed by "<data2>" (or NULL if not found)
-Usage: "CALL,<id:int>,<data1:int>,<data2_len:int>" followed by "<data2>" if applicable
-Eg: client sends: "CALL,0,1,1" followed by "127"
-    server responds: "128,0" [no <data2> since <data2_len> is zero]
+- Client sends 4 bytes: "CALL"
+- Client sends 4 byte function id in network byte ordering
+- Client sends 4 byte data1 in network byte ordering
+- Client sends 4 byte data2_len in network byte ordering
+- Client sends data2 bytes if data2_len > 0
+On success:
+- Server sends 4 byte data1 in network byte ordering
+- Server sends 4 byte data2_len in network byte ordering
+- Server sends data2 bytes if data2_len > 0
+On failure:
+- Server sends 4 bytes: "NULL"
 
 TCP should be used as the transport protocol.
 TCP
