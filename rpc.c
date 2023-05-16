@@ -205,7 +205,7 @@ void rpc_serve_all(rpc_server *srv) {
     char *buffer = malloc(256);
     if (!buffer) {
         perror("malloc");
-        continue;
+        return;
     }
 
     while(1) {
