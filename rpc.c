@@ -266,10 +266,10 @@ void rpc_serve_all(rpc_server *srv) {
             char *body = strtok(NULL, buffer);
             int id;
             sscanf(body, "%d,%d,%zu", &id, &payload->data1, &payload->data2_len);
-            // int id = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////////////
 
-            // payload->data1 = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////
-            // payload->data2_len = strtod(strtok(NULL, ","), NULL); //////////////////////////////////////////////////////////////
+            // int id = atoi(strtok(NULL, ",")); ///////////////////////////////
+            // payload->data1 = atoi(strtok(NULL, ",")); ///////////////////////
+            // payload->data2_len = strtod(strtok(NULL, ","), NULL); ///////////
 
             if (payload->data2_len > 0) {
 
@@ -443,7 +443,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     if (cl == NULL || name == NULL) return NULL;
 
     char message[256];
-    sprintf(message, "FIND,%zu,%s", strlen(name), name); ///////////////////////////////////////////////////////////////
+    sprintf(message, "FIND,%zu,%s", strlen(name), name);
 
     message[strlen(message)] = '\0';
 
@@ -492,7 +492,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
         perror("malloc");
         return NULL;
     }
-    sprintf(message, "CALL,%d,%d,%zu", /////////////////////////////////////////////////////////////////////////////////
+    sprintf(message, "CALL,%d,%d,%zu", 
             h->id, payload->data1, payload->data2_len);
 
     message[strlen(message)] = '\0';
@@ -521,7 +521,6 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
         }
     }
 
-    
     char *ret = malloc(100);
     if (!ret) {
         perror("malloc");
@@ -546,8 +545,10 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
         return NULL;
     }
 
-    res->data1 = atoi(strtok(ret, ",")); ///////////////////////////////////////////////////////////////////////////////
-    res->data2_len = strtod(strtok(NULL, ","), NULL); //////////////////////////////////////////////////////////////////////////
+    sscanf(ret, "%d,%zu", &res->data1, &res->data2_len);
+
+    // res->data1 = atoi(strtok(ret, ",")); ////////////////////////////////////
+    // res->data2_len = strtod(strtok(NULL, ","), NULL); ///////////////////////
 
     if (res->data2_len > 0) {
 
