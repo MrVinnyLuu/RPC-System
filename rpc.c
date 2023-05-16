@@ -202,13 +202,14 @@ void rpc_serve_all(rpc_server *srv) {
     }
 
     int n;
-    char *buffer = malloc(256);
-    if (!buffer) {
-        perror("malloc");
-        return;
-    }
 
     while(1) {
+
+        char *buffer = malloc(256);
+        if (!buffer) {
+            perror("malloc");
+            continue;
+        }
 
 		if ((n = recv(client_sock_fd, buffer, 256, 0)) < 0) {
 			perror("recv");
