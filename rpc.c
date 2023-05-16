@@ -226,13 +226,18 @@ void rpc_serve_all(rpc_server *srv) {
         char *req = strtok(buffer, ",");
 
         // Deal with FIND
-        if (req && strncmp("FIND", req, 4) == 0) {
+        if (req && strcmp("FIND", req) == 0) {
 
-            int len = atoi(strtok(NULL, ",")); /////////////////////////////////////////////////////////////////////////
+            int len = atoi(strtok(NULL, ",")); 
             char *name = strtok(NULL, ",");
             name[len] = '\0';
 
-            int id = rpc_find_func(srv, name);
+            // int len;
+            // char *name;
+            // sscanf(body, "%d,%s", &len, name);
+            // name[len] = '\0';
+
+            int id = rpc_find_func(srv, name); /////////////////////////////////////////////////////////////////////////
 
             // Respond with function id
             if (send(client_sock_fd, &id, sizeof(int), 0) < 0) {
@@ -250,18 +255,21 @@ void rpc_serve_all(rpc_server *srv) {
             }
 
         // Deal with CALL
-        } else if (req && strncmp("CALL", req, 4) == 0) {
+        } else if (req && strcmp("CALL", req) == 0) {
             
-            int id = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////////////
-
             rpc_data *payload = malloc(sizeof(rpc_data *));
             if (!payload) {
                 perror("malloc");
                 continue;
             }
 
-            payload->data1 = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////
-            payload->data2_len = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////
+            char *body = strtok(NULL, buffer);
+            int id;
+            sscanf(body, "%d,%d,%zu", &id, &payload->data1, &payload->data2_len);
+            // int id = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////////////
+
+            // payload->data1 = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////
+            // payload->data2_len = strtod(strtok(NULL, ","), NULL); //////////////////////////////////////////////////////////////
 
             if (payload->data2_len > 0) {
 
@@ -299,7 +307,7 @@ void rpc_serve_all(rpc_server *srv) {
             }
 
             if (res != NULL) {
-                sprintf(message,"%d,%ld",res->data1,res->data2_len); ///////////////////////////////////////////////////
+                sprintf(message,"%d,%zu",res->data1,res->data2_len); ///////////////////////////////////////////////////
             } else {
                 message = "NULL";
             }
@@ -435,7 +443,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     if (cl == NULL || name == NULL) return NULL;
 
     char message[256];
-    sprintf(message, "FIND,%ld,%s", strlen(name), name); ///////////////////////////////////////////////////////////////
+    sprintf(message, "FIND,%zu,%s", strlen(name), name); ///////////////////////////////////////////////////////////////
 
     message[strlen(message)] = '\0';
 
@@ -484,7 +492,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
         perror("malloc");
         return NULL;
     }
-    sprintf(message, "CALL,%d,%d,%ld", /////////////////////////////////////////////////////////////////////////////////
+    sprintf(message, "CALL,%d,%d,%zu", /////////////////////////////////////////////////////////////////////////////////
             h->id, payload->data1, payload->data2_len);
 
     message[strlen(message)] = '\0';
@@ -539,7 +547,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     }
 
     res->data1 = atoi(strtok(ret, ",")); ///////////////////////////////////////////////////////////////////////////////
-    res->data2_len = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////////////
+    res->data2_len = strtod(strtok(NULL, ","), NULL); //////////////////////////////////////////////////////////////////////////
 
     if (res->data2_len > 0) {
 
