@@ -238,9 +238,10 @@ void rpc_serve_all(rpc_server *srv) {
             // name[len] = '\0';
 
             int id = rpc_find_func(srv, name); /////////////////////////////////////////////////////////////////////////
+            uint32_t bytes = htonl(id);
 
             // Respond with function id
-            if (send(client_sock_fd, &id, sizeof(int), 0) < 0) {
+            if (send(client_sock_fd, &bytes, sizeof(uint32_t), 0) < 0) {
                 perror("send");
                 close(client_sock_fd);
                 continue;
@@ -307,7 +308,7 @@ void rpc_serve_all(rpc_server *srv) {
             }
 
             if (res != NULL) {
-                sprintf(message,"%d,%zu",res->data1,res->data2_len); ///////////////////////////////////////////////////
+                sprintf(message,"%d,%zu",res->data1,res->data2_len); ///////////
             } else {
                 message = "NULL";
             }
@@ -458,8 +459,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
         puts("\n");
     }
 
-    int id; ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	if (recv(cl->sock_fd, &id, 64, 0) < 0) {
+    uint32_t id; ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (recv(cl->sock_fd, &id, sizeof(uint32_t), 0) < 0) {
 		perror("recv");
 		close(cl->sock_fd);
 		return NULL;
