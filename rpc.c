@@ -8,7 +8,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <assert.h>
 
 #define INIT_SIZE 10
 #define QUEUE_LEN 10
@@ -113,7 +112,10 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
         srv->cur_size *= 2;
         srv->functions = realloc(srv->functions,
                                  srv->cur_size * sizeof(*(srv->functions)));
-        assert(srv->functions);
+        if (!srv->functions) {
+            perror("realloc");
+            return -1;
+        }
     }
 
     // Check for duplicate named functions
@@ -125,12 +127,18 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     }
 
     srv->functions[i] = malloc(sizeof(func_t *));
-    assert(srv->functions[i]);
+    if (!srv->functions[i]) {
+        perror("malloc");
+        return -1;
+    }
 
     // Store name
     srv->functions[i]->name = malloc(strlen(name)+1);
+    if (!srv->functions[i]->name) {
+        perror("malloc");
+        return -1;
+    }
     strcpy(srv->functions[i]->name, name);
-    assert(srv->functions[i]->name);
 
     // Store handler
     srv->functions[i]->handler = handler;
@@ -209,14 +217,13 @@ void rpc_serve_all(rpc_server *srv) {
             puts(buffer);
             puts("\n");
         }
-        
 
         char *req = strtok(buffer, ",");
 
         // Deal with FIND
         if (req && strncmp("FIND", req, 4) == 0) {
 
-            int len = atoi(strtok(NULL, ","));
+            int len = atoi(strtok(NULL, ",")); /////////////////////////////////////////////////////////////////////////
             char *name = strtok(NULL, ",");
             name[len] = '\0';
 
@@ -240,10 +247,13 @@ void rpc_serve_all(rpc_server *srv) {
         // Deal with CALL
         } else if (req && strncmp("CALL", req, 4) == 0) {
             
-            int id = atoi(strtok(NULL, ","));
+            int id = atoi(strtok(NULL, ","));///////////////////////////////////////////////////////////////////////////
 
             rpc_data *payload = malloc(sizeof(rpc_data *));
-            assert(payload);
+            if (!payload) {
+                perror("malloc");
+                continue;
+            }
 
             payload->data1 = atoi(strtok(NULL, ","));
             payload->data2_len = atoi(strtok(NULL, ","));
@@ -278,7 +288,7 @@ void rpc_serve_all(rpc_server *srv) {
             if (res != NULL) {
                 sprintf(message,"%d,%ld",res->data1,res->data2_len);
             } else {
-                message = "ERROR";
+                message = "NULL";
             }
 
             message[strlen(message)] = '\0';
@@ -439,7 +449,10 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     if (id == -1) return NULL;
 
     rpc_handle *h = malloc(sizeof(rpc_handle *));
-    assert(h);
+    if (!h) {
+        perror("malloc");
+        return NULL;
+    }
     h->id = id;
     return h;
 
@@ -492,10 +505,13 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
         puts("\n");
     }
 
-    if (strcmp(ret, "ERROR") == 0) return NULL;
+    if (strcmp(ret, "NULL") == 0) return NULL;
 
     rpc_data *res = malloc(sizeof(rpc_data *));
-    assert(res);
+    if (!res) {
+        perror("malloc");
+        return NULL;
+    }
 
     res->data1 = atoi(strtok(ret, ","));
     res->data2_len = atoi(strtok(NULL, ","));
