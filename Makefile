@@ -17,8 +17,8 @@ $(RPC_SYSTEM_A): rpc.o
 	ar rcs $(RPC_SYSTEM_A) $(RPC_SYSTEM)
 
 # define sets of header source files and object files
-SRC_SERVER = server.c #artifacts/server.a
-SRC_CLIENT = client.c #artifacts/client.a
+SRC_SERVER = artifacts/server.a
+SRC_CLIENT = artifacts/client.a
 
 OBJ_SERVER = $(SRC_SERVER:.c=.o)
 OBJ_CLIENT = $(SRC_CLIENT:.c=.o)

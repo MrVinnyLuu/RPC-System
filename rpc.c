@@ -61,7 +61,7 @@ rpc_server *rpc_init_server(int port) {
 
     sock_fd = socket(servinfo->ai_family, servinfo->ai_socktype,
                      servinfo->ai_protocol);
-	if(sock_fd < 0) {
+	if (sock_fd < 0) {
         perror("socket");
         return NULL;
     }
@@ -80,7 +80,7 @@ rpc_server *rpc_init_server(int port) {
     freeaddrinfo(servinfo);
 
     // Initialise server structure
-    rpc_server *srv = malloc(sizeof(rpc_server *));
+    rpc_server *srv = malloc(sizeof(*srv));
     if (!srv) {
         perror("malloc");
         return NULL;
@@ -107,15 +107,15 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     if (!(srv && name && handler)) return -1;
 
     // Ensure there's space in the array
-    if (srv->num_func == srv->cur_size) {
-        srv->cur_size *= 2;
-        srv->functions = realloc(srv->functions,
-                                 srv->cur_size * sizeof(*(srv->functions)));
-        if (!srv->functions) {
-            perror("realloc");
-            return -1;
-        }
-    }
+    // if (srv->num_func == srv->cur_size) {
+    //     srv->cur_size *= 2;
+    //     srv->functions = realloc(srv->functions,
+    //                              srv->cur_size * sizeof(*(srv->functions)));
+    //     if (!srv->functions) {
+    //         perror("realloc");
+    //         return -1;
+    //     }
+    // }
 
     // Check for duplicate named functions
     int i;
@@ -125,7 +125,7 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
         }
     }
 
-    srv->functions[i] = malloc(sizeof(func_t *));
+    srv->functions[i] = malloc(sizeof(*(srv->functions[i])));
     if (!srv->functions[i]) {
         perror("malloc");
         return -1;
@@ -202,13 +202,13 @@ void rpc_serve_all(rpc_server *srv) {
     }
 
     while(1) {
-
+        
+        int n;
         char *buffer = malloc(256);
         if (!buffer) {
             perror("malloc");
             continue;
         }
-        int n;
 
 		if ((n = recv(client_sock_fd, buffer, 256, 0)) < 0) {
 			perror("recv");
@@ -259,7 +259,7 @@ void rpc_serve_all(rpc_server *srv) {
         // Deal with CALL
         } else if (req && strcmp("CALL", req) == 0) {
             
-            rpc_data *payload = malloc(sizeof(rpc_data *));
+            rpc_data *payload = malloc(sizeof(*payload));
             if (!payload) {
                 perror("malloc");
                 continue;
@@ -302,7 +302,7 @@ void rpc_serve_all(rpc_server *srv) {
 
             rpc_data *res = rpc_call_func(srv, id, payload);
 
-            char *message = malloc(100);
+            char *message = malloc(256);
             if (!message) {
                 perror("malloc");
                 continue;
@@ -474,7 +474,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     }
     if (id == -1) return NULL;
 
-    rpc_handle *h = malloc(sizeof(rpc_handle *));
+    rpc_handle *h = malloc(sizeof(*h));
     if (!h) {
         perror("malloc");
         return NULL;
@@ -488,7 +488,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
-    char *message = malloc(100);
+    char *message = malloc(256);
     if (!message) {
         perror("malloc");
         return NULL;
@@ -522,7 +522,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
         }
     }
 
-    char *ret = malloc(100);
+    char *ret = malloc(256);
     if (!ret) {
         perror("malloc");
         return NULL;
@@ -540,7 +540,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (strcmp(ret, "NULL") == 0) return NULL;
 
-    rpc_data *res = malloc(sizeof(rpc_data *));
+    rpc_data *res = malloc(sizeof(*res));
     if (!res) {
         perror("malloc");
         return NULL;
