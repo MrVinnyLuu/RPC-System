@@ -9,8 +9,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define INIT_SIZE 10
-#define QUEUE_LEN 10
+#define INIT_FUNCS_SIZE 10
+#define LISTEN_QUEUE_LEN 10
 #define DEBUG 0
 
 /********************************* SHARED API *********************************/
@@ -25,7 +25,6 @@ void rpc_data_free(rpc_data *data) {
     free(data);
 }
 
-
 /****************************** SERVER-SIDE API *******************************/
 
 typedef struct func {
@@ -35,7 +34,6 @@ typedef struct func {
 
 struct rpc_server {
     /* Add variable(s) for server state */
-    // int port;
     int sock_fd;
     int num_func, cur_size;
     func_t **functions;
@@ -90,14 +88,14 @@ rpc_server *rpc_init_server(int port) {
     // srv->port = port;
     srv->sock_fd = sock_fd;
 
-    srv->functions = malloc(INIT_SIZE * sizeof(*(srv->functions)));
+    srv->functions = malloc(INIT_FUNCS_SIZE * sizeof(*(srv->functions)));
     if (!srv->functions) {
         perror("malloc");
         return NULL;
     }
 
     srv->num_func = 0;
-    srv->cur_size = INIT_SIZE;
+    srv->cur_size = INIT_FUNCS_SIZE;
 
     return srv;
 
@@ -105,7 +103,7 @@ rpc_server *rpc_init_server(int port) {
 
 int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 
-    if (srv == NULL || name == NULL || handler == NULL) return -1;
+    if (!(srv && name && handler)) return -1;
 
     // Ensure there's space in the array
     if (srv->num_func == srv->cur_size) {
@@ -152,6 +150,8 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 
 int rpc_find_func(rpc_server *srv, char *name) {
 
+    if (!name) return -1;
+
     if (DEBUG) printf("Finding func: %s\n", name);
 
     for (int i = 0; i < srv->num_func; i++) {
@@ -165,12 +165,13 @@ int rpc_find_func(rpc_server *srv, char *name) {
 }
 
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
+
     if (DEBUG) printf("Calling func at %d\n", id);
-    if (id >= srv->num_func) {
-        return NULL;
-    } else {
-        return srv->functions[id]->handler(payload);
-    }
+
+    if (!srv || !payload || id >= srv->num_func) return NULL;
+    
+    return srv->functions[id]->handler(payload);
+    
 }
 
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
@@ -183,7 +184,7 @@ void rpc_serve_all(rpc_server *srv) {
     int client_sock_fd = -1;
     struct sockaddr_in6 client_addr;
 
-    if (listen(srv->sock_fd, QUEUE_LEN) < 0) {
+    if (listen(srv->sock_fd, LISTEN_QUEUE_LEN) < 0) {
         perror("listen");
         close(srv->sock_fd);
         return;
@@ -202,6 +203,10 @@ void rpc_serve_all(rpc_server *srv) {
     while(1) {
 
         char *buffer = malloc(256);
+        if (!buffer) {
+            perror("malloc");
+            continue;
+        }
         int n;
 
 		if ((n = recv(client_sock_fd, buffer, 256, 0)) < 0) {
@@ -247,7 +252,7 @@ void rpc_serve_all(rpc_server *srv) {
         // Deal with CALL
         } else if (req && strncmp("CALL", req, 4) == 0) {
             
-            int id = atoi(strtok(NULL, ","));///////////////////////////////////////////////////////////////////////////
+            int id = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////////////
 
             rpc_data *payload = malloc(sizeof(rpc_data *));
             if (!payload) {
@@ -255,12 +260,16 @@ void rpc_serve_all(rpc_server *srv) {
                 continue;
             }
 
-            payload->data1 = atoi(strtok(NULL, ","));
-            payload->data2_len = atoi(strtok(NULL, ","));
+            payload->data1 = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////
+            payload->data2_len = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////
 
             if (payload->data2_len > 0) {
 
                 payload->data2 = malloc(payload->data2_len);
+                if (!payload->data2) {
+                    perror("malloc");
+                    continue;
+                }
 
                 if (recv(client_sock_fd, 
                          payload->data2, payload->data2_len, 0) < 0) {
@@ -284,9 +293,13 @@ void rpc_serve_all(rpc_server *srv) {
             rpc_data *res = rpc_call_func(srv, id, payload);
 
             char *message = malloc(100);
+            if (!message) {
+                perror("malloc");
+                continue;
+            }
 
             if (res != NULL) {
-                sprintf(message,"%d,%ld",res->data1,res->data2_len);
+                sprintf(message,"%d,%ld",res->data1,res->data2_len); ///////////////////////////////////////////////////
             } else {
                 message = "NULL";
             }
@@ -404,7 +417,10 @@ rpc_client *rpc_init_client(char *addr, int port) {
 
     // Initialise client structure
     rpc_client *cl = malloc(sizeof(rpc_client *));
-    if (!cl) return NULL;
+    if (!cl) {
+        perror("malloc");
+        return NULL;
+    }
 
     // cl->srv_addr = addr;
     // cl->port = port;
@@ -419,7 +435,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     if (cl == NULL || name == NULL) return NULL;
 
     char message[256];
-    sprintf(message, "FIND,%ld,%s", strlen(name),name);
+    sprintf(message, "FIND,%ld,%s", strlen(name), name); ///////////////////////////////////////////////////////////////
 
     message[strlen(message)] = '\0';
 
@@ -433,7 +449,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
         puts(message);
         puts("\n");
     }
-    int id;
+
+    int id; ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	if (recv(cl->sock_fd, &id, 64, 0) < 0) {
 		perror("recv");
 		close(cl->sock_fd);
@@ -463,7 +480,11 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
     char *message = malloc(100);
-    sprintf(message, "CALL,%d,%d,%ld",
+    if (!message) {
+        perror("malloc");
+        return NULL;
+    }
+    sprintf(message, "CALL,%d,%d,%ld", /////////////////////////////////////////////////////////////////////////////////
             h->id, payload->data1, payload->data2_len);
 
     message[strlen(message)] = '\0';
@@ -494,6 +515,10 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     
     char *ret = malloc(100);
+    if (!ret) {
+        perror("malloc");
+        return NULL;
+    }
 	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
 		perror("recv()");
 		close(cl->sock_fd);
@@ -513,12 +538,16 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
         return NULL;
     }
 
-    res->data1 = atoi(strtok(ret, ","));
-    res->data2_len = atoi(strtok(NULL, ","));
+    res->data1 = atoi(strtok(ret, ",")); ///////////////////////////////////////////////////////////////////////////////
+    res->data2_len = atoi(strtok(NULL, ",")); //////////////////////////////////////////////////////////////////////////
 
     if (res->data2_len > 0) {
 
         res->data2 = malloc(res->data2_len);
+        if (!res->data2) {
+            perror("malloc");
+            return NULL;
+        }
 
         if (recv(cl->sock_fd, res->data2, res->data2_len, 0) < 0) {
             perror("recv");
