@@ -5,13 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <netdb.h>
+#include <endian.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 
 #define INIT_FUNCS_SIZE 10
 #define LISTEN_QUEUE_LEN 10
-#define DEBUG 0
+#define DEBUG 1
 
 /********************************* SHARED API *********************************/
 
@@ -309,11 +310,10 @@ void rpc_serve_all(rpc_server *srv) {
 
             if (res != NULL) {
                 sprintf(message,"%d,%zu",res->data1,res->data2_len); ///////////
+                message[strlen(message)] = '\0';
             } else {
                 message = "NULL";
             }
-
-            message[strlen(message)] = '\0';
 
             if (send(client_sock_fd, message, strlen(message), 0) < 0) {
                 perror("send");
@@ -479,7 +479,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
         perror("malloc");
         return NULL;
     }
-    h->id = id;
+    h->id = ntohl(id);
     return h;
 
 }
