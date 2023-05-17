@@ -79,6 +79,7 @@ int rpc_send_data(int sock_fd, rpc_data *data) {
 
 }
 
+/* Returns NULL on error/failure */
 rpc_data *rpc_recv_data(int sock_fd) {
 
     // Initialise result
@@ -165,7 +166,6 @@ typedef struct func {
 } func_t;
 
 struct rpc_server {
-    /* Add variable(s) for server state */
     int sock_fd;
     int num_func, cur_size;
     func_t **functions;
@@ -197,6 +197,7 @@ rpc_server *rpc_init_server(int port) {
         return NULL;
     }
 
+    // Allow port/interface reuse
     int re = 1;
     if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &re, sizeof(int)) < 0) {
         perror("setsockopt");
@@ -217,7 +218,6 @@ rpc_server *rpc_init_server(int port) {
         return NULL;
     }
 
-    // srv->port = port;
     srv->sock_fd = sock_fd;
 
     srv->functions = malloc(INIT_FUNCS_SIZE * sizeof(*(srv->functions)));
@@ -282,7 +282,7 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 
 int rpc_find_func(rpc_server *srv, char *name) {
 
-    if (!name) return -1;
+    if (!name || !srv) return -1;
 
     if (DEBUG) printf("Finding func: %s\n", name);
 
@@ -333,14 +333,13 @@ void rpc_serve_all(rpc_server *srv) {
     }
 
     int n;
+    char *req = malloc(HEADER_LEN);
+    if (!req) {
+        perror("malloc");
+        return;
+    }
 
     while(1) {
-
-        char *req = malloc(HEADER_LEN);
-        if (!req) {
-            perror("malloc");
-            continue;
-        }
 
 		if ((n = recv(client_sock_fd, req, HEADER_LEN, 0)) < 0) {
 			perror("recv");
@@ -428,11 +427,9 @@ void rpc_serve_all(rpc_server *srv) {
 
             // Receive the payload and check validity
             rpc_data *payload = rpc_recv_data(client_sock_fd);
-            // if (!rpc_valid_data(payload)) continue;
 
             // Call the function and check validity
             rpc_data *res = rpc_call_func(srv, id, payload);
-            // if (!rpc_valid_data(res)) continue;
 
             // Respond with status message
             char response[HEADER_LEN];
@@ -501,14 +498,10 @@ void rpc_serve_all(rpc_server *srv) {
 /****************************** CLIENT-SIDE API *******************************/
 
 struct rpc_client {
-    /* Add variable(s) for client state */
-    // char *srv_addr;
-    // int port;
     int sock_fd;
 };
 
 struct rpc_handle {
-    /* Add variable(s) for handle */
     int id;
 };
 
