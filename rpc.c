@@ -13,7 +13,7 @@
 #define INIT_FUNCS_SIZE 10
 #define LISTEN_QUEUE_LEN 10
 #define HEADER_LEN 5
-#define DEBUG 1
+#define DEBUG 0
 
 /********************************* SHARED API *********************************/
 
@@ -328,17 +328,17 @@ void rpc_serve_all(rpc_server *srv) {
 
     client_addr_size = sizeof(client_addr);
 
-    client_sock_fd =
-        accept(srv->sock_fd, (struct sockaddr*)&client_addr, &client_addr_size);
-    if (client_sock_fd < 0) {
-        perror("accept");
-        close(srv->sock_fd);
-        return;
-    }
-
     int n;
 
     while(1) {
+
+        // Accept new connection
+        client_sock_fd = accept(srv->sock_fd, (struct sockaddr*)&client_addr,
+                                &client_addr_size);
+        if (client_sock_fd < 0) {
+            perror("accept");
+            continue;
+        }
 
         char req[HEADER_LEN];
 
@@ -473,6 +473,11 @@ void rpc_serve_all(rpc_server *srv) {
         } else {
             fprintf(stderr, "Unknown request: %s", req);
         }
+
+         // Close connection
+        if (close(client_sock_fd) < 0) {
+            perror("close");
+        }
 	
 	}
 
@@ -502,7 +507,8 @@ void rpc_serve_all(rpc_server *srv) {
 /****************************** CLIENT-SIDE API *******************************/
 
 struct rpc_client {
-    int sock_fd;
+    char *addr;
+    int port;
 };
 
 struct rpc_handle {
@@ -513,9 +519,27 @@ struct rpc_handle {
    Practical Week 9 */
 rpc_client *rpc_init_client(char *addr, int port) {
 
-    if (addr == NULL) return NULL;
+    if (addr == NULL || port < 1 || port > 65535) return NULL;
 
-    // Initialise client side
+    // Initialise client structure
+    rpc_client *cl = malloc(sizeof(rpc_client *));
+    if (!cl) {
+        perror("malloc");
+        return NULL;
+    }
+
+    cl->addr = malloc(sizeof(char) * strlen(addr));
+    strcpy(cl->addr, addr);
+    cl->port = port;
+
+    return cl;
+
+}
+
+int rpc_connect(rpc_client *cl) {
+
+    if (cl == NULL) return -1;
+
     int sock_fd = -1;
     struct addrinfo hints, *servinfo, *rp;
 
@@ -523,10 +547,10 @@ rpc_client *rpc_init_client(char *addr, int port) {
 	hints.ai_family = AF_INET6; // IPv6
     hints.ai_socktype = SOCK_STREAM; // TCP
     char service[5];
-    sprintf(service,"%d",port);
-    if (getaddrinfo(addr, service, &hints, &servinfo) < 0) {
+    sprintf(service,"%d",cl->port);
+    if (getaddrinfo(cl->addr, service, &hints, &servinfo) < 0) {
 		perror("getaddrinfo");
-		return NULL;
+		return -1;
 	}
 
     for (rp = servinfo; rp != NULL; rp = rp->ai_next) {
@@ -539,19 +563,10 @@ rpc_client *rpc_init_client(char *addr, int port) {
 
     if (rp == NULL) {
 		perror("Unable to connect");
-		return NULL;
+		return -1;
 	}
 
-    // Initialise client structure
-    rpc_client *cl = malloc(sizeof(rpc_client *));
-    if (!cl) {
-        perror("malloc");
-        return NULL;
-    }
-
-    cl->sock_fd = sock_fd;
-
-    return cl;
+    return sock_fd;
 
 }
 
@@ -559,11 +574,18 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     if (cl == NULL || name == NULL) return NULL;
 
+    // Connect to the server
+    int sock_fd = -1;
+    if ((sock_fd = rpc_connect(cl)) < 0) {
+        perror("rpc_connect");
+        return NULL;
+    }
+
     // Send FIND request
     char req[HEADER_LEN] = "FIND";
-	if (send(cl->sock_fd, req, HEADER_LEN, 0) < 0) {
+	if (send(sock_fd, req, HEADER_LEN, 0) < 0) {
 		perror("send");
-		close(cl->sock_fd);
+		close(sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
@@ -575,9 +597,9 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     // Send string length
     size_t len = strlen(name);
     uint64_t bytes = htobe64(len);
-    if (send(cl->sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
         perror("send");
-        close(cl->sock_fd);
+        close(sock_fd);
         return NULL;
     }
     if (DEBUG) {
@@ -589,9 +611,9 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     }
 
     // Send name
-	if (send(cl->sock_fd, name, len, 0) < 0) {
+	if (send(sock_fd, name, len, 0) < 0) {
 		perror("send");
-		close(cl->sock_fd);
+		close(sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
@@ -601,9 +623,9 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     }
 
     // Receive function id
-    if (recv(cl->sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+    if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
 		perror("recv");
-		close(cl->sock_fd);
+		close(sock_fd);
 		return NULL;
 	}
     int id = be64toh(bytes);
@@ -613,6 +635,12 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
         sprintf(s, "%d as %ld", id, bytes);
         puts(s);
         puts("\n");
+    }
+
+    // Close connection
+    if (close(sock_fd) < 0) {
+        perror("close");
+        // Not really any reason to return NULL for this error
     }
 
     if (id == -1) return NULL;
@@ -636,11 +664,18 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     // Check validity of payload
     if (!rpc_data_valid(payload)) return NULL;
 
+    // Connect to the server
+    int sock_fd = -1;
+    if ((sock_fd = rpc_connect(cl)) < 0) {
+        perror("rpc_connect");
+        return NULL;
+    }
+
     // Send CALL request
     char req[HEADER_LEN] = "CALL";
-	if (send(cl->sock_fd, req, HEADER_LEN, 0) < 0) {
+	if (send(sock_fd, req, HEADER_LEN, 0) < 0) {
 		perror("send");
-		close(cl->sock_fd);
+		close(sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
@@ -651,9 +686,9 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     // Send function id
     uint64_t bytes = htobe64(h->id);
-    if (send(cl->sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
         perror("send");
-        close(cl->sock_fd);
+        close(sock_fd);
         return NULL;
     }
     if (DEBUG) {
@@ -665,17 +700,17 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     }
 
     // Send the payload
-    if (rpc_data_send(cl->sock_fd, payload) < 0) {
+    if (rpc_data_send(sock_fd, payload) < 0) {
         perror("rpc_data_send");
-        close(cl->sock_fd);
+        close(sock_fd);
         return NULL;
     }
 
     // Receive status message
     char response[HEADER_LEN];
-	if (recv(cl->sock_fd, response, HEADER_LEN, 0) < 0) {
+	if (recv(sock_fd, response, HEADER_LEN, 0) < 0) {
 		perror("recv");
-		close(cl->sock_fd);
+		close(sock_fd);
 		return NULL;
 	}
     response[HEADER_LEN] = '\0';
@@ -689,7 +724,13 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     if (strcmp(response, "NULL") == 0) return NULL;
     
     // Receive and return data
-    rpc_data *res = rpc_data_recv(cl->sock_fd);
+    rpc_data *res = rpc_data_recv(sock_fd);
+
+    // Close connection
+    if (close(sock_fd) < 0) {
+        perror("close");
+        // Not really any reason to return NULL for this error
+    }
 
     // Check validity of result
     if (!rpc_data_valid(res)) return NULL;
@@ -702,10 +743,10 @@ void rpc_close_client(rpc_client *cl) {
 
     if (cl == NULL) return;
 
-	if (close(cl->sock_fd) < 0) {
-		perror("close");
-		return;
-	}
+	// if (close(cl->sock_fd) < 0) {
+	// 	perror("close");
+	// 	return;
+	// }
 
     free(cl);
     cl = NULL;
