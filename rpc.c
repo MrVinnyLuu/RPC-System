@@ -52,7 +52,7 @@ int rpc_data_send(int sock_fd, rpc_data *data) {
         return -1;
     }
     if (DEBUG) {
-        puts("Sent data_len");
+        puts("Sent data2_len");
         char s[100];
         sprintf(s, "%ld as %ld", data->data2_len, bytes);
         puts(s);
@@ -68,7 +68,7 @@ int rpc_data_send(int sock_fd, rpc_data *data) {
         }
         if (DEBUG) {
             puts("Sent data2");
-            puts(data->data2);
+            puts(data->data2); /////////////////////////////////////////////////////////////////////////////////////////
             puts("\n");
         }
     }
@@ -77,7 +77,7 @@ int rpc_data_send(int sock_fd, rpc_data *data) {
 
 }
 
-/* Returns NULL on error/failure */
+/* Returns NULL on failure/error */
 rpc_data *rpc_data_recv(int sock_fd) {
 
     // Initialise result
@@ -118,7 +118,7 @@ rpc_data *rpc_data_recv(int sock_fd) {
         puts("\n");
     }
 
-    // Recieve data2
+    // Receive data2
     if (res->data2_len > 0) {
 
         res->data2 = malloc(res->data2_len);
@@ -134,7 +134,7 @@ rpc_data *rpc_data_recv(int sock_fd) {
         }
         if (DEBUG) {
             puts("Received data2");
-            puts(res->data2);
+            puts(res->data2); //////////////////////////////////////////////////////////////////////////////////////////
             puts("\n");
         }
 
@@ -173,7 +173,7 @@ struct rpc_server {
    Practical Week 9 */
 rpc_server *rpc_init_server(int port) {
 
-    // Check for a vaild port number 
+    // Check for a vaild & usable port number for TCP
     // Source: https://en.wikipedia.org/wiki/Port_(computer_networking)
     if (port < 1 || port > 65535) return NULL;
 
@@ -379,7 +379,7 @@ void rpc_serve_all(rpc_server *srv) {
             }
 
             // Receive function name
-            char *name = malloc(len);
+            char *name = malloc(len+1); // +1 for NULL byte
             if (!name) {
                 perror("malloc");
                 continue;
@@ -450,6 +450,7 @@ void rpc_serve_all(rpc_server *srv) {
             } else {
                 strcpy(response, "DATA");
             }
+            rpc_data_free(payload);
             
             // Respond with the status message
             if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
@@ -470,17 +471,13 @@ void rpc_serve_all(rpc_server *srv) {
                 continue;
             }
 
+            if (res) rpc_data_free(res);
+
         } else {
             fprintf(stderr, "Unknown request: %s", req);
         }
 	
 	}
-
-    /* Do TCP teardown */
-    if (close(client_sock_fd) < 0) {
-        perror("close");
-        client_sock_fd = -1;
-    }
 
     return;
 
@@ -541,13 +538,12 @@ rpc_client *rpc_init_client(char *addr, int port) {
 		if (connect(sock_fd, rp->ai_addr, rp->ai_addrlen) != -1) break;
 		close(sock_fd);
 	}
+    freeaddrinfo(servinfo);
 
     if (rp == NULL) {
 		perror("Unable to connect");
 		return NULL;
 	}
-
-    freeaddrinfo(servinfo);
 
     // Initialise client structure
     rpc_client *cl = malloc(sizeof(rpc_client *));
