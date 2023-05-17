@@ -478,52 +478,60 @@ void rpc_serve_all(rpc_server *srv) {
             // Receive the payload
             rpc_data *payload = rpc_data_recv(client_sock_fd);
 
-            // Create a new thread and call the function
-            pthread_t thread_id;
-            // args_t args = {.srv = srv, .id = id, .data = payload};
-            args_t *args = malloc(sizeof(*args));
-            args->handler = srv->functions[id]->handler;
-            args->data = malloc(sizeof(payload));
-            args->data = payload;
+            // // Create a new thread and call the function
+            // pthread_t thread_id;
+            // args_t *args = malloc(sizeof(*args));
+            // args->handler = srv->functions[id]->handler;
+            // args->data = malloc(sizeof(payload));
+            // args->data = payload;
 
-            pthread_create(&thread_id, NULL, rpc_handler_wrapper, (void *)args);
-            pthread_join(thread_id, NULL);
-            rpc_data *res = args->data;
+            // pthread_create(&thread_id, NULL, rpc_handler_wrapper, (void *)args);
+            // pthread_join(thread_id, NULL);
+            // rpc_data *res = args->data;
             
             // rpc_data *res = srv->functions[id]->handler(payload);
 
-            // Check validity/success
-            char response[HEADER_LEN]; // status message
-            if (!res || !rpc_data_valid(res)
-                || !payload || !rpc_data_valid(payload)) {
-                strcpy(response, "NULL");
-                rpc_data_free(res);
-                res = NULL;
-            } else {
-                strcpy(response, "DATA");
-            }
-            rpc_data_free(payload);
-            
-            // Respond with the status message
-            if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
-                perror("send");
+            pid_t pid = fork();
+
+            if (pid < 0) {
+                perror("fork");
                 close(client_sock_fd);
                 continue;
-            }
-            if (DEBUG) {
-                puts("Sent");
-                puts(response);
-                puts("\n");
-            }
+            } else if (pid == 0) {
+                rpc_data *res = srv->functions[id]->handler(payload);
+                // Check validity/success
+                char response[HEADER_LEN]; // status message
+                if (!res || !rpc_data_valid(res)
+                    || !payload || !rpc_data_valid(payload)) {
+                    strcpy(response, "NULL");
+                    rpc_data_free(res);
+                    res = NULL;
+                } else {
+                    strcpy(response, "DATA");
+                }
+                rpc_data_free(payload);
+                
+                // Respond with the status message
+                if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
+                    perror("send");
+                    close(client_sock_fd);
+                    continue;
+                }
+                if (DEBUG) {
+                    puts("Sent");
+                    puts(response);
+                    puts("\n");
+                }
 
-            // Return the result if valid (not NULL)
-            if (res && rpc_data_send(client_sock_fd, res) < 0) {
-                perror("rpc_data_send");
-                close(client_sock_fd);
-                continue;
-            }
+                // Return the result if valid (not NULL)
+                if (res && rpc_data_send(client_sock_fd, res) < 0) {
+                    perror("rpc_data_send");
+                    close(client_sock_fd);
+                    continue;
+                }
 
-            if (res) rpc_data_free(res);
+                if (res) rpc_data_free(res);
+            }
 
         } else {
             fprintf(stderr, "Unknown request: %s", req);
