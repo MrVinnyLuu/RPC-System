@@ -13,7 +13,7 @@
 #define INIT_FUNCS_SIZE 10
 #define LISTEN_QUEUE_LEN 10
 #define HEADER_LEN 5
-#define DEBUG 1
+#define DEBUG 0
 
 /********************************* SHARED API *********************************/
 
