@@ -9,9 +9,10 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <pthread.h>
 
-#define INIT_FUNCS_SIZE 10
-#define LISTEN_QUEUE_LEN 10
+#define INIT_FUNCS_SIZE 4
+#define LISTEN_QUEUE_LEN 16
 #define HEADER_LEN 5
 #define DEBUG 0
 
@@ -171,6 +172,11 @@ struct rpc_server {
     func_t **functions;
 };
 
+typedef struct args {
+    rpc_handler handler;
+    rpc_data *data;
+} args_t;
+
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
    Practical Week 9 */
 rpc_server *rpc_init_server(int port) {
@@ -298,6 +304,44 @@ int rpc_find_func(rpc_server *srv, char *name) {
 
     return -1;
 
+}
+
+// void *rpc_call_func(void *args) {
+
+//     // "Unpack" args
+//     rpc_server *srv = ((args_t *)args)->srv;
+//     int id = ((args_t *)args)->id;
+//     rpc_data *payload = ((args_t *)args)->data;
+
+//     if (DEBUG) printf("Calling func at %d\n", id);
+
+//     if (!srv || !payload || id >= srv->num_func) return NULL;
+    
+//     // Call the function
+//     rpc_data *res = srv->functions[id]->handler(payload)
+
+//     // Put the result back into args
+//     ((args_t *)args)->data = res;
+    
+//     return NULL;
+    
+// }
+
+void *rpc_handler_wrapper(void *args) {
+
+    rpc_handler handler = ((args_t *)args)->handler;
+    rpc_data *payload = ((args_t *)args)->data;
+
+    rpc_data *res = handler(payload);
+    ((args_t *)args)->data = res;
+
+    return NULL;
+
+}
+
+void *hello(void *input) {
+    printf("**************hello world");
+    return NULL;
 }
 
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
@@ -434,8 +478,19 @@ void rpc_serve_all(rpc_server *srv) {
             // Receive the payload
             rpc_data *payload = rpc_data_recv(client_sock_fd);
 
-            // Call the function
-            rpc_data *res = rpc_call_func(srv, id, payload);
+            // Create a new thread and call the function
+            pthread_t thread_id;
+            // args_t args = {.srv = srv, .id = id, .data = payload};
+            args_t *args = malloc(sizeof(*args));
+            args->handler = srv->functions[id]->handler;
+            args->data = malloc(sizeof(payload));
+            args->data = payload;
+
+            pthread_create(&thread_id, NULL, rpc_handler_wrapper, (void *)args);
+            pthread_join(thread_id, NULL);
+            rpc_data *res = args->data;
+            
+            // rpc_data *res = srv->functions[id]->handler(payload);
 
             // Check validity/success
             char response[HEADER_LEN]; // status message
