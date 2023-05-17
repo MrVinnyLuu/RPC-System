@@ -459,17 +459,19 @@ void rpc_serve_all(rpc_server *srv) {
                 }
 
                 if (res) rpc_data_free(res);
-                rpc_close_server(srv);
-                return;
 
             } else {
                 fprintf(stderr, "Unknown request: %s", req);
             }
-        }
 
-        // Close connection
-        if (close(client_sock_fd) < 0) {
-            perror("close");
+            // Close connection
+            if (close(client_sock_fd) < 0) {
+                perror("close");
+            }
+
+            rpc_close_server(srv);
+            return;
+
         }
 	
 	}
