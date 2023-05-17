@@ -18,6 +18,47 @@
 
 /********************************* SHARED API *********************************/
 
+/* Returns -1 on failure/error and 0 otherwise */
+int rpc_send_64(int sock_fd, size_t i) {
+
+    uint64_t bytes = htobe64(i);
+
+    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+        perror("send");
+        return -1;
+    }
+    if (DEBUG) {
+        puts("Sent");
+        char s[100];
+        sprintf(s, "%ld as %ld", i, bytes);
+        puts(s);
+        puts("\n");
+    }
+
+    return 0;
+
+}
+
+/* Returns -1 on failure/error */
+size_t rpc_recv_64(int sock_fd) {
+    
+    uint64_t bytes;
+    if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+		perror("recv");
+		close(sock_fd);
+		return -1;
+	}
+    if (DEBUG) {
+        puts("Received");
+        char s[100];
+        sprintf(s, "%ld as %ld", be64toh(bytes), bytes);
+        puts(s);
+        puts("\n");
+    }
+
+    return be64toh(bytes);
+}
+
 /* Returns 1 (true) for vaild data and 0 (false) for invaild data */
 int rpc_data_valid(rpc_data *data) {
     if (data == NULL || data->data2_len < 0
@@ -29,44 +70,35 @@ int rpc_data_valid(rpc_data *data) {
     }
 }
 
+void rpc_data_free(rpc_data *data) {
+    if (data == NULL) {
+        return;
+    }
+    if (data->data2 != NULL) {
+        free(data->data2);
+    }
+    free(data);
+}
+
 /* Returns -1 on failure/error and 0 otherwise */
 int rpc_data_send(int sock_fd, rpc_data *data) {
 
     // Send data1
-    uint64_t bytes = htobe64(data->data1);
-    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-        perror("send");
-        close(sock_fd);
+    if (rpc_send_64(sock_fd, data->data1) < 0) {
+        perror("rpc_send_64");
         return -1;
-    }
-    if (DEBUG) {
-        puts("Sent data1");
-        char s[100];
-        sprintf(s, "%d as %ld", data->data1, bytes);
-        puts(s);
-        puts("\n");
     }
 
     // Send data2_len
-    bytes = htobe64(data->data2_len);
-    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-        perror("send");
-        close(sock_fd);
+    if (rpc_send_64(sock_fd, data->data2_len) < 0) {
+        perror("rpc_send_64");
         return -1;
-    }
-    if (DEBUG) {
-        puts("Sent data2_len");
-        char s[100];
-        sprintf(s, "%ld as %ld", data->data2_len, bytes);
-        puts(s);
-        puts("\n");
     }
 
     // Send data2
     if (data->data2_len > 0) {
         if (send(sock_fd, data->data2, data->data2_len, 0) < 0) {
             perror("send");
-            close(sock_fd);
             return -1;
         }
         if (DEBUG) {
@@ -89,37 +121,13 @@ rpc_data *rpc_data_recv(int sock_fd) {
         perror("malloc");
         return NULL;
     }
+    res->data2 = NULL;
 
     // Receive data1
-    uint64_t bytes;
-    if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-		perror("recv");
-		close(sock_fd);
-		return NULL;
-	}
-    res->data1 = be64toh(bytes);
-    if (DEBUG) {
-        puts("Received data1");
-        char s[100];
-        sprintf(s, "%d as %ld", res->data1, bytes);
-        puts(s);
-        puts("\n");
-    }
+    res->data1 = rpc_recv_64(sock_fd);
 
     // Receive data2_len
-    if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-		perror("recv");
-		close(sock_fd);
-		return NULL;
-	}
-    res->data2_len = be64toh(bytes);
-    if (DEBUG) {
-        puts("Received data2_len");
-        char s[100];
-        sprintf(s, "%ld as %ld", res->data2_len, bytes);
-        puts(s);
-        puts("\n");
-    }
+    res->data2_len = rpc_recv_64(sock_fd);
 
     // Receive data2
     if (res->data2_len > 0) {
@@ -127,12 +135,13 @@ rpc_data *rpc_data_recv(int sock_fd) {
         res->data2 = malloc(res->data2_len);
         if (!res->data2) {
             perror("malloc");
+            rpc_data_free(res);
             return NULL;
         }
 
         if (recv(sock_fd, res->data2, res->data2_len, 0) < 0) {
             perror("recv");
-            close(sock_fd);
+            rpc_data_free(res);
             return NULL;
         }
         if (DEBUG) {
@@ -141,22 +150,10 @@ rpc_data *rpc_data_recv(int sock_fd) {
             puts("\n");
         }
 
-    } else {
-        res->data2 = NULL;
     }
 
     return res;
 
-}
-
-void rpc_data_free(rpc_data *data) {
-    if (data == NULL) {
-        return;
-    }
-    if (data->data2 != NULL) {
-        free(data->data2);
-    }
-    free(data);
 }
 
 /****************************** SERVER-SIDE API *******************************/
@@ -171,11 +168,6 @@ struct rpc_server {
     int num_func, cur_size;
     func_t **functions;
 };
-
-typedef struct args {
-    rpc_handler handler;
-    rpc_data *data;
-} args_t;
 
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
    Practical Week 9 */
@@ -243,6 +235,23 @@ rpc_server *rpc_init_server(int port) {
 
 }
 
+void rpc_close_server(rpc_server *srv) {
+
+    if (srv == NULL) return;
+
+    for (int i = 0; i < srv->num_func; i++) {
+        free(srv->functions[i]->name);
+        free(srv->functions[i]);
+    }
+
+    free(srv->functions);
+    free(srv);
+    srv = NULL;
+
+    return;
+
+}
+
 int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 
     if (!(srv && name && handler)) return -1;
@@ -306,44 +315,6 @@ int rpc_find_func(rpc_server *srv, char *name) {
 
 }
 
-// void *rpc_call_func(void *args) {
-
-//     // "Unpack" args
-//     rpc_server *srv = ((args_t *)args)->srv;
-//     int id = ((args_t *)args)->id;
-//     rpc_data *payload = ((args_t *)args)->data;
-
-//     if (DEBUG) printf("Calling func at %d\n", id);
-
-//     if (!srv || !payload || id >= srv->num_func) return NULL;
-    
-//     // Call the function
-//     rpc_data *res = srv->functions[id]->handler(payload)
-
-//     // Put the result back into args
-//     ((args_t *)args)->data = res;
-    
-//     return NULL;
-    
-// }
-
-void *rpc_handler_wrapper(void *args) {
-
-    rpc_handler handler = ((args_t *)args)->handler;
-    rpc_data *payload = ((args_t *)args)->data;
-
-    rpc_data *res = handler(payload);
-    ((args_t *)args)->data = res;
-
-    return NULL;
-
-}
-
-void *hello(void *input) {
-    printf("**************hello world");
-    return NULL;
-}
-
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
 
     if (DEBUG) printf("Calling func at %d\n", id);
@@ -404,20 +375,7 @@ void rpc_serve_all(rpc_server *srv) {
         if (strcmp("FIND", req) == 0) {
 
             // Receive function name string length
-            uint64_t bytes; 
-            if (recv(client_sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-                perror("recv");
-                close(client_sock_fd);
-                continue;
-            }
-            size_t len = be64toh(bytes);
-            if (DEBUG) {
-                puts("Received");
-                char s[100];
-                sprintf(s, "%ld as %ld", len, bytes);
-                puts(s);
-                puts("\n");
-            }
+            size_t len = rpc_recv_64(client_sock_fd);
 
             // Receive function name
             char *name = malloc(len+1); // +1 for NULL byte
@@ -440,57 +398,18 @@ void rpc_serve_all(rpc_server *srv) {
             // Find the function id
             int id = rpc_find_func(srv, name); // -1 if not found
             free(name);
-            bytes = htobe64(id);
 
             // Respond with function id
-            if (send(client_sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-                perror("send");
+            if (rpc_send_64(client_sock_fd, id) < 0) {
+                perror("rpc_send_64");
                 close(client_sock_fd);
                 continue;
-            }
-            if (DEBUG) {
-                puts("Sent");
-                char s[100];
-                sprintf(s, "%d as %ld", id, bytes);
-                puts(s);
-                puts("\n");
             }
 
         // Deal with CALL
         } else if (strcmp("CALL", req) == 0) {
-
-            // Receive function id
-            uint64_t bytes;
-            if (recv(client_sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-                perror("recv");
-                close(client_sock_fd);
-                continue;
-            }
-            int id = be64toh(bytes);
-            if (DEBUG) {
-                puts("Received");
-                char s[100];
-                sprintf(s, "%d as %ld", id, bytes);
-                puts(s);
-                puts("\n");
-            }
-
-            // Receive the payload
-            rpc_data *payload = rpc_data_recv(client_sock_fd);
-
-            // // Create a new thread and call the function
-            // pthread_t thread_id;
-            // args_t *args = malloc(sizeof(*args));
-            // args->handler = srv->functions[id]->handler;
-            // args->data = malloc(sizeof(payload));
-            // args->data = payload;
-
-            // pthread_create(&thread_id, NULL, rpc_handler_wrapper, (void *)args);
-            // pthread_join(thread_id, NULL);
-            // rpc_data *res = args->data;
             
-            // rpc_data *res = srv->functions[id]->handler(payload);
-
+            // Create a child process to handle the CALL request
             pid_t pid = fork();
 
             if (pid < 0) {
@@ -498,8 +417,16 @@ void rpc_serve_all(rpc_server *srv) {
                 close(client_sock_fd);
                 continue;
             } else if (pid == 0) {
+
+                // Receive function id
+                int id = rpc_recv_64(client_sock_fd);
+
+                // Receive the payload
+                rpc_data *payload = rpc_data_recv(client_sock_fd);
                 
-                rpc_data *res = srv->functions[id]->handler(payload);
+                // Call the function
+                rpc_data *res = rpc_call_func(srv, id, payload);
+
                 // Check validity/success
                 char response[HEADER_LEN]; // status message
                 if (!res || !rpc_data_valid(res)
@@ -516,7 +443,7 @@ void rpc_serve_all(rpc_server *srv) {
                 if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
                     perror("send");
                     close(client_sock_fd);
-                    continue;
+                    return;
                 }
                 if (DEBUG) {
                     puts("Sent");
@@ -528,11 +455,11 @@ void rpc_serve_all(rpc_server *srv) {
                 if (res && rpc_data_send(client_sock_fd, res) < 0) {
                     perror("rpc_data_send");
                     close(client_sock_fd);
-                    continue;
+                    return;
                 }
 
                 if (res) rpc_data_free(res);
-
+                rpc_close_server(srv);
                 return;
 
             }
@@ -571,6 +498,7 @@ void rpc_serve_all(rpc_server *srv) {
 
 
 
+
 /****************************** CLIENT-SIDE API *******************************/
 
 struct rpc_client {
@@ -589,13 +517,13 @@ rpc_client *rpc_init_client(char *addr, int port) {
     if (addr == NULL || port < 1 || port > 65535) return NULL;
 
     // Initialise client structure
-    rpc_client *cl = malloc(sizeof(rpc_client *));
+    rpc_client *cl = malloc(sizeof(*cl));
     if (!cl) {
         perror("malloc");
         return NULL;
     }
 
-    cl->addr = malloc(sizeof(char) * strlen(addr));
+    cl->addr = malloc(strlen(addr)+1);
     strcpy(cl->addr, addr);
     cl->port = port;
 
@@ -663,18 +591,10 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     // Send string length
     size_t len = strlen(name);
-    uint64_t bytes = htobe64(len);
-    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-        perror("send");
+    if (rpc_send_64(sock_fd, len) < 0) {
+        perror("rpc_send_64");
         close(sock_fd);
         return NULL;
-    }
-    if (DEBUG) {
-        puts("Sent");
-        char s[100];
-        sprintf(s, "%ld as %ld", len, bytes);
-        puts(s);
-        puts("\n");
     }
 
     // Send name
@@ -690,19 +610,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     }
 
     // Receive function id
-    if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-		perror("recv");
-		close(sock_fd);
-		return NULL;
-	}
-    int id = be64toh(bytes);
-    if (DEBUG) {
-        puts("Received");
-        char s[100];
-        sprintf(s, "%d as %ld", id, bytes);
-        puts(s);
-        puts("\n");
-    }
+    int id = rpc_recv_64(sock_fd);
 
     // Close connection
     if (close(sock_fd) < 0) {
@@ -752,18 +660,10 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     }
 
     // Send function id
-    uint64_t bytes = htobe64(h->id);
-    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
-        perror("send");
+    if (rpc_send_64(sock_fd, h->id) < 0) {
+        perror("rpc_send_64");
         close(sock_fd);
         return NULL;
-    }
-    if (DEBUG) {
-        puts("Sent");
-        char s[100];
-        sprintf(s, "%d as %ld", h->id, bytes);
-        puts(s);
-        puts("\n");
     }
 
     // Send the payload
@@ -810,11 +710,7 @@ void rpc_close_client(rpc_client *cl) {
 
     if (cl == NULL) return;
 
-	// if (close(cl->sock_fd) < 0) {
-	// 	perror("close");
-	// 	return;
-	// }
-
+    free(cl->addr);
     free(cl);
     cl = NULL;
 

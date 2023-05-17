@@ -30,6 +30,7 @@ If hosts use different endian byte orders, information on one host will not matc
 
 *** Protocol Description ***
 - A client always initiates a "conversation" with the server by sending a request.
+- The implementation is non-persistent so a connection has to be established and then torn down for each request.
 - Below, each "send" from the client is matched by a "recv" by the server and vice versa.
 
 ** Requests **
