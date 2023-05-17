@@ -498,6 +498,7 @@ void rpc_serve_all(rpc_server *srv) {
                 close(client_sock_fd);
                 continue;
             } else if (pid == 0) {
+                
                 rpc_data *res = srv->functions[id]->handler(payload);
                 // Check validity/success
                 char response[HEADER_LEN]; // status message
@@ -531,6 +532,9 @@ void rpc_serve_all(rpc_server *srv) {
                 }
 
                 if (res) rpc_data_free(res);
+
+                return;
+
             }
 
         } else {
