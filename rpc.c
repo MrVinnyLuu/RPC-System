@@ -9,7 +9,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <pthread.h>
 
 #define INIT_FUNCS_SIZE 4
 #define LISTEN_QUEUE_LEN 16
@@ -390,11 +389,13 @@ void rpc_serve_all(rpc_server *srv) {
                 char *name = malloc(len+1); // +1 for NULL byte
                 if (!name) {
                     perror("malloc");
+                    rpc_close_server(srv);
                     return;
                 }
                 if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
                     perror("recv");
                     close(client_sock_fd);
+                    rpc_close_server(srv);
                     return;
                 }
                 name[len] = '\0';
@@ -412,6 +413,7 @@ void rpc_serve_all(rpc_server *srv) {
                 if (rpc_send_64(client_sock_fd, id) < 0) {
                     perror("rpc_send_64");
                     close(client_sock_fd);
+                    rpc_close_server(srv);
                     return;
                 }
 
@@ -443,6 +445,7 @@ void rpc_serve_all(rpc_server *srv) {
                 if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
                     perror("send");
                     close(client_sock_fd);
+                    rpc_close_server(srv);
                     return;
                 }
                 if (DEBUG) {
@@ -455,6 +458,7 @@ void rpc_serve_all(rpc_server *srv) {
                 if (res && rpc_data_send(client_sock_fd, res) < 0) {
                     perror("rpc_data_send");
                     close(client_sock_fd);
+                    rpc_close_server(srv);
                     return;
                 }
 
