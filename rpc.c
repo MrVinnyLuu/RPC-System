@@ -1,5 +1,3 @@
-// #define _POSIX_C_SOURCE 200112L
-
 #include "rpc.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +16,7 @@
 /********************************* SHARED API *********************************/
 
 /* Returns 1 (true) for vaild data and 0 (false) for invaild data */
-int rpc_valid_data(rpc_data *data) {
+int rpc_data_valid(rpc_data *data) {
     if (data == NULL || data->data2_len < 0
         || (data->data2_len == 0 && data->data2 != NULL)
         || (data->data2_len > 0 && data->data2 == NULL)) {
@@ -29,7 +27,7 @@ int rpc_valid_data(rpc_data *data) {
 }
 
 /* Returns -1 on failure/error and 0 otherwise */
-int rpc_send_data(int sock_fd, rpc_data *data) {
+int rpc_data_send(int sock_fd, rpc_data *data) {
 
     // Send data1
     uint64_t bytes = htobe64(data->data1);
@@ -80,7 +78,7 @@ int rpc_send_data(int sock_fd, rpc_data *data) {
 }
 
 /* Returns NULL on error/failure */
-rpc_data *rpc_recv_data(int sock_fd) {
+rpc_data *rpc_data_recv(int sock_fd) {
 
     // Initialise result
     rpc_data *res = malloc(sizeof(*res));
@@ -175,6 +173,10 @@ struct rpc_server {
    Practical Week 9 */
 rpc_server *rpc_init_server(int port) {
 
+    // Check for a vaild port number 
+    // Source: https://en.wikipedia.org/wiki/Port_(computer_networking)
+    if (port < 1 || port > 65535) return NULL;
+
     // Initialise server side 3 tuple
     int sock_fd = -1;
     struct addrinfo hints, *servinfo;
@@ -187,7 +189,7 @@ rpc_server *rpc_init_server(int port) {
     sprintf(service, "%d", port);
     if (getaddrinfo(NULL, service, &hints, &servinfo) < 0) {
 		perror("getaddrinfo");
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
     sock_fd = socket(servinfo->ai_family, servinfo->ai_socktype,
@@ -201,7 +203,7 @@ rpc_server *rpc_init_server(int port) {
     int re = 1;
     if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &re, sizeof(int)) < 0) {
         perror("setsockopt");
-        exit(EXIT_FAILURE);
+        return NULL;
     }
 
     if (bind(sock_fd, servinfo->ai_addr, servinfo->ai_addrlen) < 0) {
@@ -333,15 +335,17 @@ void rpc_serve_all(rpc_server *srv) {
     }
 
     int n;
-    char *req = malloc(HEADER_LEN);
-    if (!req) {
-        perror("malloc");
-        return;
-    }
+    // char *req = malloc(HEADER_LEN);
+    // if (!req) {
+    //     perror("malloc");
+    //     return;
+    // }
 
     while(1) {
 
-		if ((n = recv(client_sock_fd, req, HEADER_LEN, 0)) < 0) {
+        char req[HEADER_LEN];
+
+        if ((n = recv(client_sock_fd, req, HEADER_LEN, 0)) < 0) {
 			perror("recv");
 			close(client_sock_fd);
 			continue;
@@ -376,6 +380,10 @@ void rpc_serve_all(rpc_server *srv) {
 
             // Receive function name
             char *name = malloc(len);
+            if (!name) {
+                perror("malloc");
+                continue;
+            }
             if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
                 perror("recv");
                 close(client_sock_fd);
@@ -390,6 +398,7 @@ void rpc_serve_all(rpc_server *srv) {
 
             // Find the function id
             int id = rpc_find_func(srv, name); // -1 if not found
+            free(name);
             bytes = htobe64(id);
 
             // Respond with function id
@@ -425,21 +434,24 @@ void rpc_serve_all(rpc_server *srv) {
                 puts("\n");
             }
 
-            // Receive the payload and check validity
-            rpc_data *payload = rpc_recv_data(client_sock_fd);
+            // Receive the payload
+            rpc_data *payload = rpc_data_recv(client_sock_fd);
 
-            // Call the function and check validity
+            // Call the function
             rpc_data *res = rpc_call_func(srv, id, payload);
 
-            // Respond with status message
-            char response[HEADER_LEN];
-            if (!res || !payload || !rpc_valid_data(payload) || !rpc_valid_data(res)) {
-                strcpy(response,"NULL");
+            // Check validity/success
+            char response[HEADER_LEN]; // status message
+            if (!res || !rpc_data_valid(res)
+                || !payload || !rpc_data_valid(payload)) {
+                strcpy(response, "NULL");
+                rpc_data_free(res);
+                res = NULL;
             } else {
-                strcpy(response,"DATA");
+                strcpy(response, "DATA");
             }
-            // strcpy(response, (res) ? "DATA" : "NULL");
             
+            // Respond with the status message
             if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
                 perror("send");
                 close(client_sock_fd);
@@ -451,24 +463,22 @@ void rpc_serve_all(rpc_server *srv) {
                 puts("\n");
             }
 
-            // Return the result
-            if (strcmp(response,"DATA") == 0 && rpc_send_data(client_sock_fd, res) < 0) {
-                perror("rpc_send_data");
+            // Return the result if valid (not NULL)
+            if (res && rpc_data_send(client_sock_fd, res) < 0) {
+                perror("rpc_data_send");
                 close(client_sock_fd);
                 continue;
             }
 
         } else {
             fprintf(stderr, "Unknown request: %s", req);
-            close(client_sock_fd);
-            continue;
         }
 	
 	}
 
     /* Do TCP teardown */
     if (close(client_sock_fd) < 0) {
-        perror("close()");
+        perror("close");
         client_sock_fd = -1;
     }
 
@@ -522,7 +532,7 @@ rpc_client *rpc_init_client(char *addr, int port) {
     sprintf(service,"%d",port);
     if (getaddrinfo(addr, service, &hints, &servinfo) < 0) {
 		perror("getaddrinfo");
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
     for (rp = servinfo; rp != NULL; rp = rp->ai_next) {
@@ -534,7 +544,7 @@ rpc_client *rpc_init_client(char *addr, int port) {
 
     if (rp == NULL) {
 		perror("Unable to connect");
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
     freeaddrinfo(servinfo);
@@ -631,7 +641,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
     // Check validity of payload
-    if (!rpc_valid_data(payload)) return NULL;
+    if (!rpc_data_valid(payload)) return NULL;
 
     // Send CALL request
     char req[HEADER_LEN] = "CALL";
@@ -662,18 +672,14 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     }
 
     // Send the payload
-    if (rpc_send_data(cl->sock_fd, payload) < 0) {
-        perror("rpc_send_data");
+    if (rpc_data_send(cl->sock_fd, payload) < 0) {
+        perror("rpc_data_send");
         close(cl->sock_fd);
         return NULL;
     }
 
     // Receive status message
-    char *response = malloc(HEADER_LEN);
-    if (!response) {
-        perror("malloc");
-        return NULL;
-    }
+    char response[HEADER_LEN];
 	if (recv(cl->sock_fd, response, HEADER_LEN, 0) < 0) {
 		perror("recv");
 		close(cl->sock_fd);
@@ -690,10 +696,10 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     if (strcmp(response, "NULL") == 0) return NULL;
     
     // Receive and return data
-    rpc_data *res = rpc_recv_data(cl->sock_fd);
+    rpc_data *res = rpc_data_recv(cl->sock_fd);
 
     // Check validity of result
-    if (!rpc_valid_data(res)) return NULL;
+    if (!rpc_data_valid(res)) return NULL;
 
     return res;
 
@@ -704,11 +710,12 @@ void rpc_close_client(rpc_client *cl) {
     if (cl == NULL) return;
 
 	if (close(cl->sock_fd) < 0) {
-		perror("close()");
+		perror("close");
 		return;
 	}
 
     free(cl);
+    cl = NULL;
 
     return;
 
