@@ -28,30 +28,33 @@ If hosts use different endian byte orders, information on one host will not matc
 
 
 *** Protocol Description ***
+[Note that each "send" from the client is matched by a "recv" by the server and vice versa]
+
 Two types of requests:
 FIND
 Used to find a function given its name
-- Client sends 4 bytes: "FIND"
-- Client sends 4 byte string length of function name in network byte ordering
-- Client sends function name string
+C1.  Client sends 5 bytes: "FIND" [incl NULL byte]
+C2.  Client sends 8 byte string length of function name in network byte ordering
+C3.  Client sends function name string
 On success:
-- Server sends 4 byte function id in network byte ordering
+S1a. Server sends 8 byte function id in network byte ordering
 On failure:
-- Server sends 4 byte -1 in network byte ordering
+S1b. Server sends 8 byte -1 in network byte ordering
 
 CALL
 Used to call a function given its integer id
-- Client sends 4 bytes: "CALL"
-- Client sends 4 byte function id in network byte ordering
-- Client sends 4 byte data1 in network byte ordering
-- Client sends 4 byte data2_len in network byte ordering
-- Client sends data2 bytes if data2_len > 0
+C1.  Client sends 5 bytes: "CALL" [incl NULL byte]
+C2.  Client sends 8 byte function id in network byte ordering
+C3.  Client sends 8 byte data1 of payload in network byte ordering
+C4.  Client sends 8 byte data2_len of payload in network byte ordering
+C5.  Client sends data2 bytes of payload if data2_len > 0
 On success:
-- Server sends 4 byte data1 in network byte ordering
-- Server sends 4 byte data2_len in network byte ordering
-- Server sends data2 bytes if data2_len > 0
+S1a. Server sends 5 bytes confirmation message: "DATA" [incl NULL byte]
+S2.  Server sends 8 byte data1 of result in network byte ordering
+S3.  Server sends 8 byte data2_len of result in network byte ordering
+S4.  Server sends data2 bytes of result if data2_len > 0
 On failure:
-- Server sends 4 bytes: "NULL"
+S1b. Server sends 5 bytes error message: "NULL" [incl NULL byte]
 
 TCP should be used as the transport protocol.
 TCP

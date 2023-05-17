@@ -12,9 +12,128 @@
 
 #define INIT_FUNCS_SIZE 10
 #define LISTEN_QUEUE_LEN 10
+#define HEADER_LEN 5
 #define DEBUG 0
 
 /********************************* SHARED API *********************************/
+
+int rpc_send_data(int sock_fd, rpc_data *data) {
+
+    // Send data1
+    uint64_t bytes = htobe64(data->data1);
+    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+        perror("send");
+        close(sock_fd);
+        return -1;
+    }
+    if (DEBUG) {
+        puts("Sent");
+        char s[100];
+        sprintf(s, "%d as %ld", data->data1, bytes);
+        puts(s);
+        puts("\n");
+    }
+
+    // Send data2_len
+    bytes = htobe64(data->data2_len);
+    if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+        perror("send");
+        close(sock_fd);
+        return -1;
+    }
+    if (DEBUG) {
+        puts("Sent");
+        char s[100];
+        sprintf(s, "%ld as %ld", data->data2_len, bytes);
+        puts(s);
+        puts("\n");
+    }
+
+    // Send data2
+    if (data->data2_len > 0) {
+        if (send(sock_fd, data->data2, data->data2_len, 0) < 0) {
+            perror("send");
+            close(sock_fd);
+            return -1;
+        }
+        if (DEBUG) {
+            puts("Sent");
+            puts(data->data2);
+            puts("\n");
+        }
+    }
+
+    return 0;
+
+}
+
+rpc_data *rpc_recv_data(int sock_fd) {
+
+    // Initialise result
+    rpc_data *res = malloc(sizeof(*res));
+    if (!res) {
+        perror("malloc");
+        return NULL;
+    }
+
+    // Receive data1
+    uint64_t bytes;
+    if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+		perror("recv");
+		close(sock_fd);
+		return NULL;
+	}
+    res->data1 = be64toh(bytes);
+    if (DEBUG) {
+        puts("Received");
+        char s[100];
+        sprintf(s, "%d as %ld", res->data1, bytes);
+        puts(s);
+        puts("\n");
+    }
+
+    // Receive data2_len
+    if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+		perror("recv");
+		close(sock_fd);
+		return NULL;
+	}
+    res->data2_len = be64toh(bytes);
+    if (DEBUG) {
+        puts("Received");
+        char s[100];
+        sprintf(s, "%ld as %ld", res->data2_len, bytes);
+        puts(s);
+        puts("\n");
+    }
+
+    // Recieve data2
+    if (res->data2_len > 0) {
+
+        res->data2 = malloc(res->data2_len);
+        if (!res->data2) {
+            perror("malloc");
+            return NULL;
+        }
+
+        if (recv(sock_fd, res->data2, res->data2_len, 0) < 0) {
+            perror("recv");
+            close(sock_fd);
+            return NULL;
+        }
+        if (DEBUG) {
+            puts("Received");
+            puts(res->data2);
+            puts("\n");
+        }
+
+    } else {
+        res->data2 = NULL;
+    }
+
+    return res;
+
+}
 
 void rpc_data_free(rpc_data *data) {
     if (data == NULL) {
@@ -205,14 +324,14 @@ void rpc_serve_all(rpc_server *srv) {
 
     while(1) {
 
-        char *buffer = malloc(256);
-        if (!buffer) {
+        char *req = malloc(HEADER_LEN);
+        if (!req) {
             perror("malloc");
             continue;
         }
 
-		if ((n = recv(client_sock_fd, buffer, 256, 0)) < 0) {
-			perror("recv");
+		if ((n = recv(client_sock_fd, req, HEADER_LEN, 0)) < 0) {
+			// perror("recv");
 			close(client_sock_fd);
 			continue;
 		}
@@ -221,26 +340,45 @@ void rpc_serve_all(rpc_server *srv) {
 
         if (DEBUG) {
             puts("Received");
-            puts(buffer);
+            puts(req);
             puts("\n");
         }
 
-        char *req = strtok(buffer, ",");
-
         // Deal with FIND
-        if (req && strcmp("FIND", req) == 0) {
+        if (strcmp("FIND", req) == 0) {
 
-            int len = atoi(strtok(NULL, ",")); 
-            char *name = strtok(NULL, ",");
-            name[len] = '\0';
+            // Receive function name string length
+            uint64_t bytes; 
+            if (recv(client_sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+                perror("recv");
+                close(client_sock_fd);
+                continue;
+            }
+            size_t len = be64toh(bytes);
+            if (DEBUG) {
+                puts("Received");
+                char s[100];
+                sprintf(s, "%ld as %ld", len, bytes);
+                puts(s);
+                puts("\n");
+            }
 
-            // int len;
-            // char *name;
-            // sscanf(body, "%d,%s", &len, name);
-            // name[len] = '\0';
+            // Receive function name
+            char *name = malloc(len);
+            if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
+                perror("recv");
+                close(client_sock_fd);
+                continue;
+            }
+            if (DEBUG) {
+                puts("Received");
+                puts(name);
+                puts("\n");
+            }
 
-            int id = rpc_find_func(srv, name); /////////////////////////////////////////////////////////////////////////
-            uint64_t bytes = htobe64(id);
+            // Find the function id
+            int id = rpc_find_func(srv, name); // -1 if not found
+            bytes = htobe64(id);
 
             // Respond with function id
             if (send(client_sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
@@ -248,100 +386,62 @@ void rpc_serve_all(rpc_server *srv) {
                 close(client_sock_fd);
                 continue;
             }
-
             if (DEBUG) {
                 puts("Sent");
-                char s[5];
-                sprintf(s, "%d", id);
+                char s[100];
+                sprintf(s, "%d as %ld", id, bytes);
                 puts(s);
                 puts("\n");
             }
 
         // Deal with CALL
-        } else if (req && strcmp("CALL", req) == 0) {
-            
-            rpc_data *payload = malloc(sizeof(*payload));
-            if (!payload) {
-                perror("malloc");
+        } else if (strcmp("CALL", req) == 0) {
+
+            // Receive function id
+            uint64_t bytes;
+            if (recv(client_sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+                perror("recv");
+                close(client_sock_fd);
                 continue;
             }
-
-            char *body = strtok(NULL, buffer);
-            int id;
-            sscanf(body, "%d,%d,%zu", &id, &payload->data1, &payload->data2_len);
-
-            // int id = atoi(strtok(NULL, ",")); ///////////////////////////////
-            // payload->data1 = atoi(strtok(NULL, ",")); ///////////////////////
-            // payload->data2_len = strtod(strtok(NULL, ","), NULL); ///////////
-
-            if (payload->data2_len > 0) {
-
-                payload->data2 = malloc(payload->data2_len);
-                if (!payload->data2) {
-                    perror("malloc");
-                    continue;
-                }
-
-                if (recv(client_sock_fd, 
-                         payload->data2, payload->data2_len, 0) < 0) {
-
-                    perror("recv");
-                    close(client_sock_fd);
-                    continue;
-
-                }
-
-                if (DEBUG) {
-                    puts("Received");
-                    puts(payload->data2);
-                    puts("\n");
-                }
-
-            } else {
-                payload->data2 = NULL;
+            int id = be64toh(bytes);
+            if (DEBUG) {
+                puts("Received");
+                char s[100];
+                sprintf(s, "%d as %ld", id, bytes);
+                puts(s);
+                puts("\n");
             }
 
+            // Receive the payload
+            rpc_data *payload = rpc_recv_data(client_sock_fd);
+
+            // Call the function
             rpc_data *res = rpc_call_func(srv, id, payload);
 
-            char *message = malloc(256);
-            if (!message) {
-                perror("malloc");
-                continue;
-            }
-
-            if (res != NULL) {
-                sprintf(message,"%d,%zu",res->data1,res->data2_len); ///////////
-                message[strlen(message)] = '\0';
-            } else {
-                message = "NULL";
-            }
-
-            if (send(client_sock_fd, message, strlen(message), 0) < 0) {
+            // Respond with status message
+            char response[HEADER_LEN];
+            strcpy(response, (res) ? "DATA" : "NULL");
+            if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
                 perror("send");
                 close(client_sock_fd);
                 continue;
             }
             if (DEBUG) {
                 puts("Sent");
-                puts(message);
+                puts(response);
                 puts("\n");
             }
 
-            if (res && res->data2_len > 0) {
-                if (send(client_sock_fd, res->data2, res->data2_len, 0) < 0) {
-                    perror("send");
-                    close(client_sock_fd);
-                    continue;
-                }
-                if (DEBUG) {
-                    puts("Sent");
-                    puts(res->data2);
-                    puts("\n");
-                }
+            // Return the result
+            if (rpc_send_data(client_sock_fd, res) < 0) {
+                perror("rpc_send_data");
+                close(client_sock_fd);
+                continue;
             }
 
         } else {
-            fprintf(stderr, "Unknown request: %s", buffer);
+            fprintf(stderr, "Unknown request: %s", req);
             close(client_sock_fd);
             continue;
         }
@@ -432,8 +532,6 @@ rpc_client *rpc_init_client(char *addr, int port) {
         return NULL;
     }
 
-    // cl->srv_addr = addr;
-    // cl->port = port;
     cl->sock_fd = sock_fd;
 
     return cl;
@@ -444,43 +542,72 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     if (cl == NULL || name == NULL) return NULL;
 
-    char message[256];
-    sprintf(message, "FIND,%zu,%s", strlen(name), name);
-
-    message[strlen(message)] = '\0';
-
-	if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
+    // Send FIND request
+    char req[HEADER_LEN] = "FIND";
+	if (send(cl->sock_fd, req, HEADER_LEN, 0) < 0) {
 		perror("send");
 		close(cl->sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
         puts("Sent");
-        puts(message);
+        puts(req);
         puts("\n");
     }
 
-    uint64_t id; ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	if (recv(cl->sock_fd, &id, sizeof(uint64_t), 0) < 0) {
-		perror("recv");
+    // Send string length
+    size_t len = strlen(name);
+    uint64_t bytes = htobe64(len);
+    if (send(cl->sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+        perror("send");
+        close(cl->sock_fd);
+        return NULL;
+    }
+    if (DEBUG) {
+        puts("Sent");
+        char s[100];
+        sprintf(s, "%ld as %ld", len, bytes);
+        puts(s);
+        puts("\n");
+    }
+
+    // Send name
+	if (send(cl->sock_fd, name, len, 0) < 0) {
+		perror("send");
 		close(cl->sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
+        puts("Sent");
+        puts(name);
+        puts("\n");
+    }
+
+    // Receive function id
+    if (recv(cl->sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+		perror("recv");
+		close(cl->sock_fd);
+		return NULL;
+	}
+    int id = be64toh(bytes);
+    if (DEBUG) {
         puts("Received");
-        char s[5];
-        sprintf(s, "%ld", id);
+        char s[100];
+        sprintf(s, "%d as %ld", id, bytes);
         puts(s);
         puts("\n");
     }
+
     if (id == -1) return NULL;
 
+    // Create and return handle
     rpc_handle *h = malloc(sizeof(*h));
     if (!h) {
         perror("malloc");
         return NULL;
     }
-    h->id = be64toh(id);
+    h->id = id;
+
     return h;
 
 }
@@ -489,93 +616,93 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
-    char *message = malloc(256);
-    if (!message) {
-        perror("malloc");
-        return NULL;
-    }
-    sprintf(message, "CALL,%d,%d,%zu", 
-            h->id, payload->data1, payload->data2_len);
-
-    message[strlen(message)] = '\0';
-
-    if (send(cl->sock_fd, message, strlen(message), 0) < 0) {
+    // Send CALL request
+    char req[HEADER_LEN] = "CALL";
+	if (send(cl->sock_fd, req, HEADER_LEN, 0) < 0) {
 		perror("send");
 		close(cl->sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
         puts("Sent");
-        puts(message);
+        puts(req);
         puts("\n");
     }
 
-    if (payload->data2_len > 0) {
-        if (send(cl->sock_fd, payload->data2, payload->data2_len, 0) < 0) {
-            perror("send");
-            close(cl->sock_fd);
-            return NULL;
-        }
-        if (DEBUG) {
-            puts("Sent");
-            puts(payload->data2);
-            puts("\n");
-        }
+    // Send function id
+    uint64_t bytes = htobe64(h->id);
+    if (send(cl->sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
+        perror("send");
+        close(cl->sock_fd);
+        return NULL;
+    }
+    if (DEBUG) {
+        puts("Sent");
+        char s[100];
+        sprintf(s, "%d as %ld", h->id, bytes);
+        puts(s);
+        puts("\n");
     }
 
-    char *ret = malloc(256);
-    if (!ret) {
+    // Send the payload
+    if (rpc_send_data(cl->sock_fd, payload) < 0) {
+        perror("rpc_send_data");
+        close(cl->sock_fd);
+        return NULL;
+    }
+
+    // Receive status message
+    char *response = malloc(HEADER_LEN);
+    if (!response) {
         perror("malloc");
         return NULL;
     }
-	if (recv(cl->sock_fd, ret, 256, 0) < 0) {
-		perror("recv()");
+	if (recv(cl->sock_fd, response, HEADER_LEN, 0) < 0) {
+		perror("recv");
 		close(cl->sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
         puts("Received");
-        puts(ret);
+        puts(response);
         puts("\n");
     }
 
-    if (strcmp(ret, "NULL") == 0) return NULL;
+    // Return on error
+    if (strcmp(response, "NULL") == 0) return NULL;
+    
+    // Receive and return data
+    return rpc_recv_data(cl->sock_fd);
 
-    rpc_data *res = malloc(sizeof(*res));
-    if (!res) {
-        perror("malloc");
-        return NULL;
-    }
+    // sscanf(ret, "%d,%zu", &res->data1, &res->data2_len);
 
-    sscanf(ret, "%d,%zu", &res->data1, &res->data2_len);
+    // // res->data1 = atoi(strtok(ret, ",")); ////////////////////////////////////
+    // // res->data2_len = strtod(strtok(NULL, ","), NULL); ///////////////////////
 
-    // res->data1 = atoi(strtok(ret, ",")); ////////////////////////////////////
-    // res->data2_len = strtod(strtok(NULL, ","), NULL); ///////////////////////
+    // if (res->data2_len > 0) {
 
-    if (res->data2_len > 0) {
+    //     res->data2 = malloc(res->data2_len);
+    //     if (!res->data2) {
+    //         perror("malloc");
+    //         return NULL;
+    //     }
 
-        res->data2 = malloc(res->data2_len);
-        if (!res->data2) {
-            perror("malloc");
-            return NULL;
-        }
+    //     if (recv(cl->sock_fd, res->data2, res->data2_len, 0) < 0) {
+    //         perror("recv");
+    //         close(cl->sock_fd);
+    //         return NULL;
+    //     }
+    //     if (DEBUG) {
+    //         puts("Received");
+    //         puts(res->data2);
+    //         puts("\n");
+    //     }
 
-        if (recv(cl->sock_fd, res->data2, res->data2_len, 0) < 0) {
-            perror("recv");
-            close(cl->sock_fd);
-            return NULL;
-        }
-        if (DEBUG) {
-            puts("Received");
-            puts(res->data2);
-            puts("\n");
-        }
+    // } else {
+    //     res->data2 = NULL;
+    // }
 
-    } else {
-        res->data2 = NULL;
-    }
-
-    return res;
+    // return res;
 
 }
 
