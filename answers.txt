@@ -8,10 +8,10 @@ Student ID: 1269979
 If the server accepted calls from everyone, malicious actors could perform DOS attacks by flooding the system with calls. Therefore, a "real world" RPC server should only accept calls from authenticated/trusted users. However, this particular project does not need to handle malicious actors and can therefore accept calls from everyone.
 
 2. Should authentication etc. be provided by the RPC framework, or by the functions that use the RPC framework?
-In both a "real world" server and in this project, authentication should be provided by the RPC framework so that it can provide authentication for all calls and responses. Furthermore, this authentication process would not need to know about the specific inner workings of individual functions.
+In both a "real world" server and in this project, authentication should be provided by the RPC framework so that it can provide authentication for all calls and responses. Furthermore, this authentication process would not need to know about the specific inner workings of individual functions or rely on function implementors to provide authentication. The scope of this project does not require such authentication.
 
 3. What transport layer protocol should be used? What are the trade-offs?
-In both a "real world" server and in this project, TCP should be used due to its reliability. The trade-off with using TCP is that it requires the creation and management of a connection. This can result in slower data transmission and increased overhead.
+In both a "real world" server and in this project, TCP should be used due to its reliability. TCP can handle IP layer packet loss and duplication. The trade-off with using TCP (rather than UDP for example) is that it requires the creation and management of a connection. This can result in slower data transmission and increased overhead.
 
 4. In which function(s) should the socket(s) be created?
 A socket requires: Client IP, Client Port, Server IP, Server Port, Protocol
@@ -21,42 +21,53 @@ The protocol is constant.
 Therefore, the socket(s) will be created in the rpc_init_server and rpc_init_client functions in this project. A "real world" server would likely follow the same general idea with separate functions handling client and server information. 
 
 5. Should rpc_client and rpc_server be allocated dynamically or statically? What are the implications for the client and server code?
-In this project, "rpc_client" and "rpc_server" should both be allocated dynamically to provide more flexibility and better space efficiency.  However, this would mean that the client and server code would have to be able to handle generic (unspecified size) "rpc_client" and "rpc_server" data. It would also mean that memory would have to be freed on close. This would also be true for a "real world" RPC server.
+In this project, "rpc_server" should be allocated dynamically to provide more flexibility and better space efficiency.  However, this would mean that the server code would have to be able to handle generic (unspecified size) "rpc_server" data, specifically to do with the stored functions. "rpc_server" should also be allocated dynamically to provide modularity and allow use across functions. This would mean that the client and server code would need to free the allocated memory. These things would also be true for a "real world" RPC server.
 
 6. What happens if one host uses big-endian byte order and the other uses little-endian? How does that relate to “network byte order”?
-If hosts use different endian byte orders, information on one host will not match information communicated to the other. Using "network byte order" resolves this issue by enforcing big-endian byte order, regardless of the machine's architecture. This is true both in this project and in a "real world" RPC server. 
+If hosts use different endian byte orders, information on one host will not match information sent to the other. Using "network byte order" resolves this issue by enforcing big-endian byte order, regardless of the machine's architecture. This is true both in this project and in a "real world" RPC server. 
+
 
 
 *** Protocol Description ***
-[Note that each "send" from the client is matched by a "recv" by the server and vice versa]
+- A client always initiates a "conversation" with the server by sending a request.
+- Below, each "send" from the client is matched by a "recv" by the server and vice versa.
 
+** Requests **
 Two types of requests:
 FIND
-Used to find a function given its name
+___ rpc_handle *rpc_find(rpc_client *cl, char *name) ___
+Used to find a function given its name.
+Returns a rpc_handle* used to identify the function.
+
 C1.  Client sends 5 bytes: "FIND" [incl NULL byte]
-C2.  Client sends 8 byte string length of function name in network byte ordering
-C3.  Client sends function name string
+C2.  Client sends 8-byte function name string length in network byte order
+C3.  Client sends function name string which is of length specified in C2.
 On success:
-S1a. Server sends 8 byte function id in network byte ordering
-On failure:
-S1b. Server sends 8 byte -1 in network byte ordering
+S1a. Server sends 8-byte function id in network byte order
+On failure (e.g function not found):
+S1b. Server sends 8-byte -1 in network byte order
 
 CALL
-Used to call a function given its integer id
-C1.  Client sends 5 bytes: "CALL" [incl NULL byte]
-C2.  Client sends 8 byte function id in network byte ordering
-C3.  Client sends 8 byte data1 of payload in network byte ordering
-C4.  Client sends 8 byte data2_len of payload in network byte ordering
-C5.  Client sends data2 bytes of payload if data2_len > 0
-On success:
-S1a. Server sends 5 bytes confirmation message: "DATA" [incl NULL byte]
-S2.  Server sends 8 byte data1 of result in network byte ordering
-S3.  Server sends 8 byte data2_len of result in network byte ordering
-S4.  Server sends data2 bytes of result if data2_len > 0
-On failure:
-S1b. Server sends 5 bytes error message: "NULL" [incl NULL byte]
+___ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) ___
+Used to call a function, identified by its rpc_handle *h, on the rpc_data *payload.
+Returns rpc_data *result of the function on the payload.
 
-TCP should be used as the transport protocol.
+C1.  Client sends 5 bytes: "CALL" [incl NULL byte]
+C2.  Client sends 8-byte function id (i.e. h->id) in network byte order
+C3.  Client sends 8-byte data1 of payload in network byte order
+C4.  Client sends 8-byte data2_len of payload in network byte order
+C5.  Client sends data2 bytes of payload if data2_len > 0. This will send data2_len many bytes.
+On success:
+S1a. Server sends 5 bytes confirmation status message: "DATA" [incl NULL byte]
+S2.  Server sends 8-byte data1 of result in network byte order
+S3.  Server sends 8-byte data2_len of result in network byte order
+S4.  Server sends data2 bytes of result if data2_len > 0. This will send data2_len many bytes.
+On failure (e.g function not found, bad payload data, bad handler):
+S1b. Server sends 5-byte error status message: "NULL" [incl NULL byte]
+
+** Transport Layer Protocol **
+TCP should be used as the transport protocol. The implementation runs on top of IPv6. 
+
 TCP
 Pros: Reliable
 Cons: Requires connections and therefore more overhead
@@ -64,3 +75,5 @@ Cons: Requires connections and therefore more overhead
 UDP
 Pros: Connectionless and therefore less overhead
 Cons: Unreliable
+
+Since TCP is reliable, the application protocol should work correctly even if there is IP layer packet loss or duplication.

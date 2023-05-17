@@ -335,11 +335,6 @@ void rpc_serve_all(rpc_server *srv) {
     }
 
     int n;
-    // char *req = malloc(HEADER_LEN);
-    // if (!req) {
-    //     perror("malloc");
-    //     return;
-    // }
 
     while(1) {
 
