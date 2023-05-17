@@ -17,6 +17,18 @@
 
 /********************************* SHARED API *********************************/
 
+/* Returns 1 (true) for vaild data and 0 (false) for invaild data */
+int rpc_valid_data(rpc_data *data) {
+    if (data == NULL || data->data2_len < 0
+        || (data->data2_len == 0 && data->data2 != NULL)
+        || (data->data2_len > 0 && data->data2 == NULL)) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+/* Returns -1 on failure/error and 0 otherwise */
 int rpc_send_data(int sock_fd, rpc_data *data) {
 
     // Send data1
@@ -27,7 +39,7 @@ int rpc_send_data(int sock_fd, rpc_data *data) {
         return -1;
     }
     if (DEBUG) {
-        puts("Sent");
+        puts("Sent data1");
         char s[100];
         sprintf(s, "%d as %ld", data->data1, bytes);
         puts(s);
@@ -42,7 +54,7 @@ int rpc_send_data(int sock_fd, rpc_data *data) {
         return -1;
     }
     if (DEBUG) {
-        puts("Sent");
+        puts("Sent data_len");
         char s[100];
         sprintf(s, "%ld as %ld", data->data2_len, bytes);
         puts(s);
@@ -57,7 +69,7 @@ int rpc_send_data(int sock_fd, rpc_data *data) {
             return -1;
         }
         if (DEBUG) {
-            puts("Sent");
+            puts("Sent data2");
             puts(data->data2);
             puts("\n");
         }
@@ -85,7 +97,7 @@ rpc_data *rpc_recv_data(int sock_fd) {
 	}
     res->data1 = be64toh(bytes);
     if (DEBUG) {
-        puts("Received");
+        puts("Received data1");
         char s[100];
         sprintf(s, "%d as %ld", res->data1, bytes);
         puts(s);
@@ -100,7 +112,7 @@ rpc_data *rpc_recv_data(int sock_fd) {
 	}
     res->data2_len = be64toh(bytes);
     if (DEBUG) {
-        puts("Received");
+        puts("Received data2_len");
         char s[100];
         sprintf(s, "%ld as %ld", res->data2_len, bytes);
         puts(s);
@@ -122,7 +134,7 @@ rpc_data *rpc_recv_data(int sock_fd) {
             return NULL;
         }
         if (DEBUG) {
-            puts("Received");
+            puts("Received data2");
             puts(res->data2);
             puts("\n");
         }
@@ -331,7 +343,7 @@ void rpc_serve_all(rpc_server *srv) {
         }
 
 		if ((n = recv(client_sock_fd, req, HEADER_LEN, 0)) < 0) {
-			// perror("recv");
+			perror("recv");
 			close(client_sock_fd);
 			continue;
 		}
@@ -414,15 +426,23 @@ void rpc_serve_all(rpc_server *srv) {
                 puts("\n");
             }
 
-            // Receive the payload
+            // Receive the payload and check validity
             rpc_data *payload = rpc_recv_data(client_sock_fd);
+            // if (!rpc_valid_data(payload)) continue;
 
-            // Call the function
+            // Call the function and check validity
             rpc_data *res = rpc_call_func(srv, id, payload);
+            // if (!rpc_valid_data(res)) continue;
 
             // Respond with status message
             char response[HEADER_LEN];
-            strcpy(response, (res) ? "DATA" : "NULL");
+            if (!res || !payload || !rpc_valid_data(payload) || !rpc_valid_data(res)) {
+                strcpy(response,"NULL");
+            } else {
+                strcpy(response,"DATA");
+            }
+            // strcpy(response, (res) ? "DATA" : "NULL");
+            
             if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
                 perror("send");
                 close(client_sock_fd);
@@ -435,7 +455,7 @@ void rpc_serve_all(rpc_server *srv) {
             }
 
             // Return the result
-            if (rpc_send_data(client_sock_fd, res) < 0) {
+            if (strcmp(response,"DATA") == 0 && rpc_send_data(client_sock_fd, res) < 0) {
                 perror("rpc_send_data");
                 close(client_sock_fd);
                 continue;
@@ -617,6 +637,9 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     if (cl == NULL || h == NULL || payload == NULL) return NULL;
 
+    // Check validity of payload
+    if (!rpc_valid_data(payload)) return NULL;
+
     // Send CALL request
     char req[HEADER_LEN] = "CALL";
 	if (send(cl->sock_fd, req, HEADER_LEN, 0) < 0) {
@@ -674,7 +697,12 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     if (strcmp(response, "NULL") == 0) return NULL;
     
     // Receive and return data
-    return rpc_recv_data(cl->sock_fd);
+    rpc_data *res = rpc_recv_data(cl->sock_fd);
+
+    // Check validity of result
+    if (!rpc_valid_data(res)) return NULL;
+
+    return res;
 
 }
 
