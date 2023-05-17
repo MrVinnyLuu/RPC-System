@@ -371,52 +371,52 @@ void rpc_serve_all(rpc_server *srv) {
             puts("\n");
         }
 
-        // Deal with FIND
-        if (strcmp("FIND", req) == 0) {
+        // Create a child process to handle the request
+        pid_t pid = fork();
 
-            // Receive function name string length
-            size_t len = rpc_recv_64(client_sock_fd);
+        if (pid < 0) {
+            perror("fork");
+            close(client_sock_fd);
+            continue;
+        } else if (pid == 0) {
 
-            // Receive function name
-            char *name = malloc(len+1); // +1 for NULL byte
-            if (!name) {
-                perror("malloc");
-                continue;
-            }
-            if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
-                perror("recv");
-                close(client_sock_fd);
-                continue;
-            }
-            name[len] = '\0';
-            if (DEBUG) {
-                puts("Received");
-                puts(name);
-                puts("\n");
-            }
+            // Deal with FIND
+            if (strcmp("FIND", req) == 0) {
 
-            // Find the function id
-            int id = rpc_find_func(srv, name); // -1 if not found
-            free(name);
+                // Receive function name string length
+                size_t len = rpc_recv_64(client_sock_fd);
 
-            // Respond with function id
-            if (rpc_send_64(client_sock_fd, id) < 0) {
-                perror("rpc_send_64");
-                close(client_sock_fd);
-                continue;
-            }
+                // Receive function name
+                char *name = malloc(len+1); // +1 for NULL byte
+                if (!name) {
+                    perror("malloc");
+                    return;
+                }
+                if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
+                    perror("recv");
+                    close(client_sock_fd);
+                    return;
+                }
+                name[len] = '\0';
+                if (DEBUG) {
+                    puts("Received");
+                    puts(name);
+                    puts("\n");
+                }
 
-        // Deal with CALL
-        } else if (strcmp("CALL", req) == 0) {
-            
-            // Create a child process to handle the CALL request
-            pid_t pid = fork();
+                // Find the function id
+                int id = rpc_find_func(srv, name); // -1 if not found
+                free(name);
 
-            if (pid < 0) {
-                perror("fork");
-                close(client_sock_fd);
-                continue;
-            } else if (pid == 0) {
+                // Respond with function id
+                if (rpc_send_64(client_sock_fd, id) < 0) {
+                    perror("rpc_send_64");
+                    close(client_sock_fd);
+                    return;
+                }
+
+            // Deal with CALL
+            } else if (strcmp("CALL", req) == 0) {
 
                 // Receive function id
                 int id = rpc_recv_64(client_sock_fd);
@@ -462,13 +462,12 @@ void rpc_serve_all(rpc_server *srv) {
                 rpc_close_server(srv);
                 return;
 
+            } else {
+                fprintf(stderr, "Unknown request: %s", req);
             }
-
-        } else {
-            fprintf(stderr, "Unknown request: %s", req);
         }
 
-         // Close connection
+        // Close connection
         if (close(client_sock_fd) < 0) {
             perror("close");
         }
