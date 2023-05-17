@@ -13,7 +13,7 @@
 #define INIT_FUNCS_SIZE 10
 #define LISTEN_QUEUE_LEN 10
 #define HEADER_LEN 5
-#define DEBUG 0
+#define DEBUG 1
 
 /********************************* SHARED API *********************************/
 
@@ -370,6 +370,7 @@ void rpc_serve_all(rpc_server *srv) {
                 close(client_sock_fd);
                 continue;
             }
+            name[len] = '\0';
             if (DEBUG) {
                 puts("Received");
                 puts(name);
@@ -662,6 +663,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		close(cl->sock_fd);
 		return NULL;
 	}
+    response[HEADER_LEN] = '\0';
     if (DEBUG) {
         puts("Received");
         puts(response);
@@ -673,36 +675,6 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     
     // Receive and return data
     return rpc_recv_data(cl->sock_fd);
-
-    // sscanf(ret, "%d,%zu", &res->data1, &res->data2_len);
-
-    // // res->data1 = atoi(strtok(ret, ",")); ////////////////////////////////////
-    // // res->data2_len = strtod(strtok(NULL, ","), NULL); ///////////////////////
-
-    // if (res->data2_len > 0) {
-
-    //     res->data2 = malloc(res->data2_len);
-    //     if (!res->data2) {
-    //         perror("malloc");
-    //         return NULL;
-    //     }
-
-    //     if (recv(cl->sock_fd, res->data2, res->data2_len, 0) < 0) {
-    //         perror("recv");
-    //         close(cl->sock_fd);
-    //         return NULL;
-    //     }
-    //     if (DEBUG) {
-    //         puts("Received");
-    //         puts(res->data2);
-    //         puts("\n");
-    //     }
-
-    // } else {
-    //     res->data2 = NULL;
-    // }
-
-    // return res;
 
 }
 
