@@ -1,6 +1,5 @@
 #define _POSIX_C_SOURCE 200112L
 #define _DEFAULT_SOURCE
-
 #define NONBLOCKING
 
 #include "rpc.h"
@@ -17,7 +16,6 @@
 #define LISTEN_QUEUE_LEN 16
 #define HEADER_LEN 5
 #define MAX_DATA2_LEN 100000
-#define DEBUG 0
 
 /********************************* SHARED API *********************************/
 
@@ -29,13 +27,6 @@ int rpc_send_64(int sock_fd, size_t i) {
     if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
         perror("send");
         return -1;
-    }
-    if (DEBUG) {
-        puts("Sent");
-        char s[100];
-        sprintf(s, "%ld as %ld", i, bytes);
-        puts(s);
-        puts("\n");
     }
 
     return 0;
@@ -51,13 +42,6 @@ size_t rpc_recv_64(int sock_fd) {
 		close(sock_fd);
 		return -1;
 	}
-    if (DEBUG) {
-        puts("Received");
-        char s[100];
-        sprintf(s, "%ld as %ld", be64toh(bytes), bytes);
-        puts(s);
-        puts("\n");
-    }
 
     return be64toh(bytes);
 }
@@ -107,11 +91,6 @@ int rpc_data_send(int sock_fd, rpc_data *data) {
             perror("send");
             return -1;
         }
-        if (DEBUG) {
-            puts("Sent data2");
-            puts(data->data2);
-            puts("\n");
-        }
     }
 
     return 0;
@@ -150,17 +129,13 @@ rpc_data *rpc_data_recv(int sock_fd) {
             rpc_data_free(res);
             return NULL;
         }
-        if (DEBUG) {
-            puts("Received data2");
-            puts(res->data2);
-            puts("\n");
-        }
 
     }
 
     return res;
 
 }
+
 
 /****************************** SERVER-SIDE API *******************************/
 
@@ -297,8 +272,6 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     // Store handler
     srv->functions[i]->handler = handler;
 
-    if (DEBUG) printf("Registered func: %s at %d\n", name, i);
-
     // Return function number
     return srv->num_func++;
 
@@ -307,8 +280,6 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 int rpc_find_func(rpc_server *srv, char *name) {
 
     if (!name || !srv) return -1;
-
-    if (DEBUG) printf("Finding func: %s\n", name);
 
     for (int i = 0; i < srv->num_func; i++) {
         if (strcmp(srv->functions[i]->name, name) == 0) {
@@ -321,8 +292,6 @@ int rpc_find_func(rpc_server *srv, char *name) {
 }
 
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
-
-    if (DEBUG) printf("Calling func at %d\n", id);
 
     if (!srv || !payload || id >= srv->num_func) return NULL;
     
@@ -370,12 +339,6 @@ void rpc_serve_all(rpc_server *srv) {
 
         if (n == 0) continue;
 
-        if (DEBUG) {
-            puts("Received");
-            puts(req);
-            puts("\n");
-        }
-
         // Create a child process to handle the request
         pid_t pid = fork();
 
@@ -409,11 +372,6 @@ void rpc_serve_all(rpc_server *srv) {
                 return;
             }
             name[len] = '\0';
-            if (DEBUG) {
-                puts("Received");
-                puts(name);
-                puts("\n");
-            }
 
             // Find the function id
             int id = rpc_find_func(srv, name); // -1 if not found
@@ -458,11 +416,6 @@ void rpc_serve_all(rpc_server *srv) {
                 rpc_close_server(srv);
                 return;
             }
-            if (DEBUG) {
-                puts("Sent");
-                puts(response);
-                puts("\n");
-            }
 
             // Return the result if valid (not NULL)
             if (res && rpc_data_send(client_sock_fd, res) < 0) {
@@ -484,7 +437,6 @@ void rpc_serve_all(rpc_server *srv) {
         }
 
         rpc_close_server(srv);
-        if (DEBUG) printf("Closing child after %s\n", req);
         return;
 	
 	}
@@ -492,25 +444,6 @@ void rpc_serve_all(rpc_server *srv) {
     return;
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 /****************************** CLIENT-SIDE API *******************************/
@@ -596,11 +529,6 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		close(sock_fd);
 		return NULL;
 	}
-    if (DEBUG) {
-        puts("Sent");
-        puts("FIND");
-        puts("\n");
-    }
 
     // Send string length
     size_t len = strlen(name);
@@ -616,11 +544,6 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 		close(sock_fd);
 		return NULL;
 	}
-    if (DEBUG) {
-        puts("Sent");
-        puts(name);
-        puts("\n");
-    }
 
     // Receive function id
     int id = rpc_recv_64(sock_fd);
@@ -665,11 +588,6 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		close(sock_fd);
 		return NULL;
 	}
-    if (DEBUG) {
-        puts("Sent");
-        puts("CALL");
-        puts("\n");
-    }
 
     // Send function id
     if (rpc_send_64(sock_fd, h->id) < 0) {
@@ -693,11 +611,6 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 		return NULL;
 	}
     response[HEADER_LEN] = '\0';
-    if (DEBUG) {
-        puts("Received");
-        puts(response);
-        puts("\n");
-    }
 
     // Return on error
     if (strcmp(response, "NULL") == 0) return NULL;
