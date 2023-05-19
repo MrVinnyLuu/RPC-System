@@ -383,108 +383,109 @@ void rpc_serve_all(rpc_server *srv) {
             perror("fork");
             close(client_sock_fd);
             continue;
-        } else if (pid == 0) {
-
-            // Deal with FIND
-            if (strcmp("FIND", req) == 0) {
-
-                // Receive function name string length
-                size_t len = rpc_recv_64(client_sock_fd);
-
-                // Receive function name
-                char *name = malloc(len+1); // +1 for NULL byte
-                if (!name) {
-                    perror("malloc");
-                    close(client_sock_fd);
-                    rpc_close_server(srv);
-                    return;
-                }
-                if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
-                    perror("recv");
-                    close(client_sock_fd);
-                    rpc_close_server(srv);
-                    return;
-                }
-                name[len] = '\0';
-                if (DEBUG) {
-                    puts("Received");
-                    puts(name);
-                    puts("\n");
-                }
-
-                // Find the function id
-                int id = rpc_find_func(srv, name); // -1 if not found
-                free(name);
-
-                // Respond with function id
-                if (rpc_send_64(client_sock_fd, id) < 0) {
-                    perror("rpc_send_64");
-                    close(client_sock_fd);
-                    rpc_close_server(srv);
-                    return;
-                }
-
-            // Deal with CALL
-            } else if (strcmp("CALL", req) == 0) {
-
-                // Receive function id
-                int id = rpc_recv_64(client_sock_fd);
-
-                // Receive the payload
-                rpc_data *payload = rpc_data_recv(client_sock_fd);
-                
-                // Call the function
-                rpc_data *res = rpc_call_func(srv, id, payload);
-
-                // Check validity/success
-                char response[HEADER_LEN]; // status message
-                if (!res || !rpc_data_valid(res)
-                    || !payload || !rpc_data_valid(payload)) {
-                    strcpy(response, "NULL");
-                    rpc_data_free(res);
-                    res = NULL;
-                } else {
-                    strcpy(response, "DATA");
-                }
-                rpc_data_free(payload);
-                
-                // Respond with the status message
-                if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
-                    perror("send");
-                    close(client_sock_fd);
-                    rpc_close_server(srv);
-                    return;
-                }
-                if (DEBUG) {
-                    puts("Sent");
-                    puts(response);
-                    puts("\n");
-                }
-
-                // Return the result if valid (not NULL)
-                if (res && rpc_data_send(client_sock_fd, res) < 0) {
-                    perror("rpc_data_send");
-                    close(client_sock_fd);
-                    rpc_close_server(srv);
-                    return;
-                }
-
-                if (res) rpc_data_free(res);
-
-            } else {
-                fprintf(stderr, "Unknown request: %s", req);
-            }
-
-            // Close connection
-            if (close(client_sock_fd) < 0) {
-                perror("close");
-            }
-
-            rpc_close_server(srv);
-            if (DEBUG) printf("Closing child after %s\n", req);
-            return;
-
+        } else if (pid > 0) {
+            // Let the parent process continue 
+            continue;
         }
+
+        // Deal with FIND
+        if (strcmp("FIND", req) == 0) {
+
+            // Receive function name string length
+            size_t len = rpc_recv_64(client_sock_fd);
+
+            // Receive function name
+            char *name = malloc(len+1); // +1 for NULL byte
+            if (!name) {
+                perror("malloc");
+                close(client_sock_fd);
+                rpc_close_server(srv);
+                return;
+            }
+            if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
+                perror("recv");
+                close(client_sock_fd);
+                rpc_close_server(srv);
+                return;
+            }
+            name[len] = '\0';
+            if (DEBUG) {
+                puts("Received");
+                puts(name);
+                puts("\n");
+            }
+
+            // Find the function id
+            int id = rpc_find_func(srv, name); // -1 if not found
+            free(name);
+
+            // Respond with function id
+            if (rpc_send_64(client_sock_fd, id) < 0) {
+                perror("rpc_send_64");
+                close(client_sock_fd);
+                rpc_close_server(srv);
+                return;
+            }
+
+        // Deal with CALL
+        } else if (strcmp("CALL", req) == 0) {
+
+            // Receive function id
+            int id = rpc_recv_64(client_sock_fd);
+
+            // Receive the payload
+            rpc_data *payload = rpc_data_recv(client_sock_fd);
+            
+            // Call the function
+            rpc_data *res = rpc_call_func(srv, id, payload);
+
+            // Check validity/success
+            char response[HEADER_LEN]; // status message
+            if (!res || !rpc_data_valid(res)
+                || !payload || !rpc_data_valid(payload)) {
+                strcpy(response, "NULL");
+                rpc_data_free(res);
+                res = NULL;
+            } else {
+                strcpy(response, "DATA");
+            }
+            rpc_data_free(payload);
+            
+            // Respond with the status message
+            if (send(client_sock_fd, response, HEADER_LEN, 0) < 0) {
+                perror("send");
+                close(client_sock_fd);
+                rpc_close_server(srv);
+                return;
+            }
+            if (DEBUG) {
+                puts("Sent");
+                puts(response);
+                puts("\n");
+            }
+
+            // Return the result if valid (not NULL)
+            if (res && rpc_data_send(client_sock_fd, res) < 0) {
+                perror("rpc_data_send");
+                close(client_sock_fd);
+                rpc_close_server(srv);
+                return;
+            }
+
+            if (res) rpc_data_free(res);
+
+        } else {
+            fprintf(stderr, "Unknown request: %s", req);
+        }
+
+        // Close connection
+        if (close(client_sock_fd) < 0) {
+            perror("close");
+        }
+
+        rpc_close_server(srv);
+        if (DEBUG) printf("Closing child after %s\n", req);
+        return;
 	
 	}
 
