@@ -2,10 +2,11 @@ Name: Vincent Luu
 Login ID: luuvl
 Student ID: 1269979
 
+
 *** Planning task ***
 
 1. Should the server accept calls from everyone, or just a subset of users?
-If the server accepted calls from everyone, malicious actors could perform DOS attacks by flooding the system with calls. Therefore, a "real world" RPC server should only accept calls from authenticated/trusted users. However, this particular project does not need to handle malicious actors and can therefore accept calls from everyone.
+If the server accepted calls from everyone, malicious actors could perform DOS attacks by flooding the system with calls. Therefore, a "real world" RPC server should only accept calls from authenticated/trusted users. However, this particular project does not need to handle malicious actors and can therefore accept calls from everyone on IPv6.
 
 2. Should authentication etc. be provided by the RPC framework, or by the functions that use the RPC framework?
 In both a "real world" server and in this project, authentication should be provided by the RPC framework so that it can provide authentication for all calls and responses. Furthermore, this authentication process would not need to know about the specific inner workings of individual functions or rely on function implementors to provide authentication. The scope of this project does not require such authentication.
@@ -17,14 +18,16 @@ In both a "real world" server and in this project, TCP should be used due to its
 A socket requires: Client IP, Client Port, Server IP, Server Port, Protocol
 The protocol is constant.
 "rpc_init_server" receives information for and sets up Server IP and Server Port.
+"rpc_server_all" listens and accepts incoming connections
 "rpc_init_client"  receives information for and sets up Client IP and Client Port.
-Therefore, the socket(s) will be created in the rpc_init_server and rpc_init_client functions in this project. A "real world" server would likely follow the same general idea with separate functions handling client and server information. 
+Therefore, the socket(s) will be created in the rpc_init_server, rpc_server_all, rpc_init_client functions in this project. A "real world" server would likely follow the same general idea with separate functions handling client and server information. 
 
 5. Should rpc_client and rpc_server be allocated dynamically or statically? What are the implications for the client and server code?
-In this project, "rpc_server" should be allocated dynamically to provide more flexibility and better space efficiency.  However, this would mean that the server code would have to be able to handle generic (unspecified size) "rpc_server" data, specifically to do with the stored functions. "rpc_server" should also be allocated dynamically to provide modularity and allow use across functions. This would mean that the client and server code would need to free the allocated memory. These things would also be true for a "real world" RPC server.
+In this project, "rpc_server" and “rpc_client” should both be allocated dynamically to provide more flexibility and better space efficiency. However, this would mean that the server code would have to be able to handle generic (unspecified size) data, specifically to do with the stored functions. They should also be allocated dynamically to provide modularity and allow use across functions. This would mean that the client and server code would need to free the allocated memory on close. These things would also be true for a "real world" RPC server.
 
 6. What happens if one host uses big-endian byte order and the other uses little-endian? How does that relate to “network byte order”?
 If hosts use different endian byte orders, information on one host will not match information sent to the other. Using "network byte order" resolves this issue by enforcing big-endian byte order, regardless of the machine's architecture. This is true both in this project and in a "real world" RPC server. 
+
 
 
 
@@ -63,8 +66,9 @@ S1a. Server sends 5 bytes confirmation status message: "DATA" [incl NULL byte]
 S2.  Server sends 8-byte data1 of result in network byte order
 S3.  Server sends 8-byte data2_len of result in network byte order
 S4.  Server sends data2 bytes of result if data2_len > 0. This will send data2_len many bytes.
-On failure (e.g function not found, bad payload data, bad handler):
+On failure (e.g function not found, bad payload data, bad handler, overlength):
 S1b. Server sends 5-byte error status message: "NULL" [incl NULL byte]
+
 
 ** Transport Layer Protocol **
 TCP should be used as the transport protocol. The implementation runs on top of IPv6. 
@@ -78,3 +82,20 @@ Pros: Connectionless and therefore less overhead
 Cons: Unreliable
 
 Since TCP is reliable, the application protocol should work correctly even if there is IP layer packet loss or duplication.
+
+
+** Dealing with size limitations **
+DIFFERENT ARCHITECTURE
+- All int and size_t are send as 64-bit numbers encoded in network byte ordering. (This means that data1 and data2_len is limited to 64-bits)
+- After being received, the receiving machine will cast the received number into an int or size_t.
+- Letting the receiving machine cast the number ensures that it is the max (up to 64-bits) allowable size on that machine's architecture.
+- Furthermore, all numbers are sent in network byte order to avoid the problem described in Q6 above.
+
+OVERLENGTH ERROR
+- Payloads with data2 that are larger than 100,000 bytes will be rejected: "Overlength error" will be printed to stderr (client-side) and NULL will be returned from the call to rpc_call().
+- Results with data2 that are larger than 100,000 bytes will not be returned. "Overlength error" will be printed to stderr (server-side) and "NULL" will be return to rpc_call().
+
+MAX IP PACKET SIZE
+- The maximum IP packet payload is 65,535 bytes (Source: http://euclid.nmu.edu/~rappleto/Classes/CS442/Notes/IPv6_Header.html).
+- However, lower layers have a much smaller MTU (Maximum Transmission Unit)
+- Therefore, the implemented protocol lets TCP automatically deal with packets above 65,535 bytes

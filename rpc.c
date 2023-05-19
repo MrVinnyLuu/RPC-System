@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200112L
+#define _DEFAULT_SOURCE
+
 #define NONBLOCKING
 
 #include "rpc.h"
@@ -13,6 +16,7 @@
 #define INIT_FUNCS_SIZE 4
 #define LISTEN_QUEUE_LEN 16
 #define HEADER_LEN 5
+#define MAX_DATA2_LEN 100000
 #define DEBUG 0
 
 /********************************* SHARED API *********************************/
@@ -64,6 +68,9 @@ int rpc_data_valid(rpc_data *data) {
         || (data->data2_len == 0 && data->data2 != NULL)
         || (data->data2_len > 0 && data->data2 == NULL)) {
         return 0;
+    } else if (data->data2_len > MAX_DATA2_LEN) {
+        perror("Overlength error");
+        return 0;
     } else {
         return 1;
     }
@@ -102,7 +109,7 @@ int rpc_data_send(int sock_fd, rpc_data *data) {
         }
         if (DEBUG) {
             puts("Sent data2");
-            puts(data->data2); /////////////////////////////////////////////////////////////////////////////////////////
+            puts(data->data2);
             puts("\n");
         }
     }
@@ -145,7 +152,7 @@ rpc_data *rpc_data_recv(int sock_fd) {
         }
         if (DEBUG) {
             puts("Received data2");
-            puts(res->data2); //////////////////////////////////////////////////////////////////////////////////////////
+            puts(res->data2);
             puts("\n");
         }
 
@@ -173,8 +180,7 @@ struct rpc_server {
 rpc_server *rpc_init_server(int port) {
 
     // Check for a vaild & usable port number for TCP
-    // Source: https://en.wikipedia.org/wiki/Port_(computer_networking)
-    if (port < 1 || port > 65535) return NULL;
+    if (port < 0 || port > 65535) return NULL;
 
     // Initialise server side 3 tuple
     int sock_fd = -1;
@@ -389,6 +395,7 @@ void rpc_serve_all(rpc_server *srv) {
                 char *name = malloc(len+1); // +1 for NULL byte
                 if (!name) {
                     perror("malloc");
+                    close(client_sock_fd);
                     rpc_close_server(srv);
                     return;
                 }
@@ -474,6 +481,7 @@ void rpc_serve_all(rpc_server *srv) {
             }
 
             rpc_close_server(srv);
+            if (DEBUG) printf("Closing child after %s\n", req);
             return;
 
         }
@@ -515,11 +523,9 @@ struct rpc_handle {
     int id;
 };
 
-/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
-   Practical Week 9 */
 rpc_client *rpc_init_client(char *addr, int port) {
 
-    if (addr == NULL || port < 1 || port > 65535) return NULL;
+    if (addr == NULL || port < 0 || port > 65535) return NULL;
 
     // Initialise client structure
     rpc_client *cl = malloc(sizeof(*cl));
@@ -536,6 +542,8 @@ rpc_client *rpc_init_client(char *addr, int port) {
 
 }
 
+/* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
+   Practical Week 9 */
 int rpc_connect(rpc_client *cl) {
 
     if (cl == NULL) return -1;
@@ -582,15 +590,14 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
     }
 
     // Send FIND request
-    char req[HEADER_LEN] = "FIND";
-	if (send(sock_fd, req, HEADER_LEN, 0) < 0) {
+	if (send(sock_fd, "FIND", HEADER_LEN, 0) < 0) {
 		perror("send");
 		close(sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
         puts("Sent");
-        puts(req);
+        puts("FIND");
         puts("\n");
     }
 
@@ -652,15 +659,14 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     }
 
     // Send CALL request
-    char req[HEADER_LEN] = "CALL";
-	if (send(sock_fd, req, HEADER_LEN, 0) < 0) {
+	if (send(sock_fd, "CALL", HEADER_LEN, 0) < 0) {
 		perror("send");
 		close(sock_fd);
 		return NULL;
 	}
     if (DEBUG) {
         puts("Sent");
-        puts(req);
+        puts("CALL");
         puts("\n");
     }
 
