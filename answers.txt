@@ -97,5 +97,5 @@ OVERLENGTH ERROR
 
 MAX IP PACKET SIZE
 - The maximum IP packet payload is 65,535 bytes (Source: http://euclid.nmu.edu/~rappleto/Classes/CS442/Notes/IPv6_Header.html).
-- However, lower layers have a much smaller MTU (Maximum Transmission Unit)
+- However, the datalink layer has a much smaller MTU (Maximum Transmission Unit)
 - Therefore, the implemented protocol lets TCP automatically deal with packets above 65,535 bytes
