@@ -9,8 +9,8 @@ LIB =
 # define sets of header source files and object files
 RPC_SYSTEM = rpc.o
 
-SRC_SERVER = server.c #artifacts/server.a
-SRC_CLIENT = client.c #artifacts/client.a
+SRC_SERVER = artifacts/server.a
+SRC_CLIENT = artifacts/client.a
 OBJ_SERVER = $(SRC_SERVER:.c=.o)
 OBJ_CLIENT = $(SRC_CLIENT:.c=.o)
 EXE_SERVER = rpc-server
