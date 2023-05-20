@@ -6,10 +6,12 @@ CFLAGS = -Wall -g
 # define libraries to be linked
 LIB = 
 
+all: $(RPC_SYSTEM) $(EXE_SERVER) $(EXE_CLIENT)
+
 # RPC
 RPC_SYSTEM = rpc.o
 
-$(RPC_SYSTEM): rpc.c rpc.h server.c client.c
+$(RPC_SYSTEM): rpc.c rpc.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 RPC_SYSTEM_A=rpc.a
@@ -31,8 +33,6 @@ $(EXE_SERVER): $(OBJ_SERVER)
 
 $(EXE_CLIENT): $(OBJ_CLIENT)
 	$(CC) $(CFLAGS) -o $(EXE_CLIENT) $(RPC_SYSTEM) $(OBJ_CLIENT) $(LIB)
-
-all: $(RPC_SYSTEM) $(EXE_SERVER) $(EXE_CLIENT)
 
 clean: 
 	rm -f $(RPC_SYSTEM) $(EXE_SERVER) $(EXE_CLIENT)
