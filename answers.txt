@@ -86,16 +86,16 @@ Since TCP is reliable, the application protocol should work correctly even if th
 
 ** Dealing with size limitations **
 DIFFERENT ARCHITECTURE
-- All int and size_t are send as 64-bit numbers encoded in network byte ordering. (This means that data1 and data2_len is limited to 64-bits)
+- All int and size_t are sent as 64-bit numbers encoded in network byte ordering. (This means that data1 and data2_len is limited to 64-bits)
 - After being received, the receiving machine will cast the received number into an int or size_t.
 - Letting the receiving machine cast the number ensures that it is the max (up to 64-bits) allowable size on that machine's architecture.
 - Furthermore, all numbers are sent in network byte order to avoid the problem described in Q6 above.
 
 OVERLENGTH ERROR
 - Payloads with data2 that are larger than 100,000 bytes will be rejected: "Overlength error" will be printed to stderr (client-side) and NULL will be returned from the call to rpc_call().
-- Results with data2 that are larger than 100,000 bytes will not be returned. "Overlength error" will be printed to stderr (server-side) and "NULL" will be return to rpc_call().
+- Results with data2 that are larger than 100,000 bytes will not be returned. "Overlength error" will be printed to stderr (server-side) and "NULL" will be returned to rpc_call().
 
 MAX IP PACKET SIZE
 - The maximum IP packet payload is 65,535 bytes (Source: http://euclid.nmu.edu/~rappleto/Classes/CS442/Notes/IPv6_Header.html).
-- However, the datalink layer has a much smaller MTU (Maximum Transmission Unit)
+- However, the data link layer has a much smaller MTU (Maximum Transmission Unit)
 - Therefore, the implemented protocol lets TCP automatically deal with packets above 65,535 bytes

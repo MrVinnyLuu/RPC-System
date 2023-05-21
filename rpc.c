@@ -14,38 +14,39 @@
 
 #define INIT_FUNCS_SIZE 4
 #define LISTEN_QUEUE_LEN 16
-#define HEADER_LEN 5
+#define HEADER_LEN 5 // including terminating NULL byte
 #define MAX_DATA2_LEN 100000
+#define PORT_NUM_STR 6 // including terminating NULL byte
+#define MAX_PORT 65535
 
 /********************************* SHARED API *********************************/
 
+/* Send (up to) a 64-bit integer */
 /* Returns -1 on failure/error and 0 otherwise */
 int rpc_send_64(int sock_fd, size_t i) {
-
+    // Convert host to network byte order
     uint64_t bytes = htobe64(i);
-
     if (send(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
         perror("send");
         return -1;
     }
-
     return 0;
-
 }
 
+/* Receive (up to) a 64-bit integer */
 /* Returns -1 on failure/error */
 size_t rpc_recv_64(int sock_fd) {
-    
     uint64_t bytes;
     if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
 		perror("recv");
 		close(sock_fd);
 		return -1;
 	}
-
+    // Convert to network byte order to host
     return be64toh(bytes);
 }
 
+/* Check if the data is valid */
 /* Returns 1 (true) for vaild data and 0 (false) for invaild data */
 int rpc_data_valid(rpc_data *data) {
     if (data == NULL || data->data2_len < 0
@@ -61,15 +62,14 @@ int rpc_data_valid(rpc_data *data) {
 }
 
 void rpc_data_free(rpc_data *data) {
-    if (data == NULL) {
-        return;
-    }
+    if (data == NULL) return;
     if (data->data2 != NULL) {
         free(data->data2);
     }
     free(data);
 }
 
+/* Send a rpc_data */
 /* Returns -1 on failure/error and 0 otherwise */
 int rpc_data_send(int sock_fd, rpc_data *data) {
 
@@ -97,6 +97,7 @@ int rpc_data_send(int sock_fd, rpc_data *data) {
 
 }
 
+/* Receive a rpc_data */
 /* Returns NULL on failure/error */
 rpc_data *rpc_data_recv(int sock_fd) {
 
@@ -155,7 +156,7 @@ struct rpc_server {
 rpc_server *rpc_init_server(int port) {
 
     // Check for a vaild & usable port number for TCP
-    if (port < 0 || port > 65535) return NULL;
+    if (port < 0 || port > MAX_PORT) return NULL;
 
     // Initialise server side 3 tuple
     int sock_fd = -1;
@@ -165,7 +166,7 @@ rpc_server *rpc_init_server(int port) {
     hints.ai_family = AF_INET6; // IPv6
     hints.ai_socktype = SOCK_STREAM; // TCP
     hints.ai_flags = AI_PASSIVE;
-    char service[5];
+    char service[PORT_NUM_STR];
     sprintf(service, "%d", port);
     if (getaddrinfo(NULL, service, &hints, &servinfo) < 0) {
 		perror("getaddrinfo");
@@ -216,20 +217,15 @@ rpc_server *rpc_init_server(int port) {
 }
 
 void rpc_close_server(rpc_server *srv) {
-
     if (srv == NULL) return;
-
     for (int i = 0; i < srv->num_func; i++) {
         free(srv->functions[i]->name);
         free(srv->functions[i]);
     }
-
     free(srv->functions);
     free(srv);
     srv = NULL;
-
     return;
-
 }
 
 int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
@@ -294,7 +290,8 @@ int rpc_find_func(rpc_server *srv, char *name) {
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
 
     if (!srv || !payload || id >= srv->num_func) return NULL;
-    
+    if (srv->functions[id]->handler == NULL) return NULL;
+
     return srv->functions[id]->handler(payload);
     
 }
@@ -306,7 +303,7 @@ void rpc_serve_all(rpc_server *srv) {
     if (srv == NULL) return;    
 
     socklen_t client_addr_size;
-    int client_sock_fd = -1;
+    int client_sock_fd = -1, n;
     struct sockaddr_in6 client_addr;
 
     if (listen(srv->sock_fd, LISTEN_QUEUE_LEN) < 0) {
@@ -316,8 +313,6 @@ void rpc_serve_all(rpc_server *srv) {
     }
 
     client_addr_size = sizeof(client_addr);
-
-    int n;
 
     while(1) {
 
@@ -329,8 +324,8 @@ void rpc_serve_all(rpc_server *srv) {
             continue;
         }
 
+        // Receive the request
         char req[HEADER_LEN];
-
         if ((n = recv(client_sock_fd, req, HEADER_LEN, 0)) < 0) {
 			perror("recv");
 			close(client_sock_fd);
@@ -346,8 +341,8 @@ void rpc_serve_all(rpc_server *srv) {
             perror("fork");
             close(client_sock_fd);
             continue;
-        } else if (pid > 0) {
-            // Let the parent process continue 
+        // Let the parent process continue
+        } else if (pid > 0) { 
             continue;
         }
 
@@ -399,11 +394,13 @@ void rpc_serve_all(rpc_server *srv) {
 
             // Check validity/success
             char response[HEADER_LEN]; // status message
+            // On failure 
             if (!res || !rpc_data_valid(res)
                 || !payload || !rpc_data_valid(payload)) {
                 strcpy(response, "NULL");
                 rpc_data_free(res);
                 res = NULL;
+            // On success
             } else {
                 strcpy(response, "DATA");
             }
@@ -438,7 +435,7 @@ void rpc_serve_all(rpc_server *srv) {
 
         rpc_close_server(srv);
         return;
-	
+
 	}
 
     return;
@@ -459,7 +456,7 @@ struct rpc_handle {
 
 rpc_client *rpc_init_client(char *addr, int port) {
 
-    if (addr == NULL || port < 0 || port > 65535) return NULL;
+    if (addr == NULL || port < 0 || port > MAX_PORT) return NULL;
 
     // Initialise client structure
     rpc_client *cl = malloc(sizeof(*cl));
@@ -476,6 +473,7 @@ rpc_client *rpc_init_client(char *addr, int port) {
 
 }
 
+/* (Re)initiate a connection to the server */
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
    Practical Week 9 */
 int rpc_connect(rpc_client *cl) {
@@ -488,7 +486,7 @@ int rpc_connect(rpc_client *cl) {
     memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_INET6; // IPv6
     hints.ai_socktype = SOCK_STREAM; // TCP
-    char service[5];
+    char service[PORT_NUM_STR];
     sprintf(service,"%d",cl->port);
     if (getaddrinfo(cl->addr, service, &hints, &servinfo) < 0) {
 		perror("getaddrinfo");
@@ -632,13 +630,9 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 }
 
 void rpc_close_client(rpc_client *cl) {
-
     if (cl == NULL) return;
-
     free(cl->addr);
     free(cl);
     cl = NULL;
-
     return;
-
 }

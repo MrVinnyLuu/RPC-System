@@ -3,11 +3,10 @@
 # define C compiler & flags
 CC = gcc
 CFLAGS = -Wall -g
-# define libraries to be linked
-LIB = 
 
 # define sets of header source files and object files
 RPC_SYSTEM = rpc.o
+RPC_SYSTEM_A = rpc.a
 
 SRC_SERVER = server.c
 SRC_CLIENT = client.c
@@ -21,15 +20,14 @@ all: $(RPC_SYSTEM) $(EXE_SERVER) $(EXE_CLIENT)
 $(RPC_SYSTEM): rpc.c rpc.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-RPC_SYSTEM_A=rpc.a
 $(RPC_SYSTEM_A): rpc.o
 	ar rcs $(RPC_SYSTEM_A) $(RPC_SYSTEM)
 
 $(EXE_SERVER): $(OBJ_SERVER)
-	$(CC) $(CFLAGS) -o $(EXE_SERVER) $(RPC_SYSTEM) $(OBJ_SERVER) $(LIB)
+	$(CC) $(CFLAGS) -o $(EXE_SERVER) $(RPC_SYSTEM) $(OBJ_SERVER)
 
 $(EXE_CLIENT): $(OBJ_CLIENT)
-	$(CC) $(CFLAGS) -o $(EXE_CLIENT) $(RPC_SYSTEM) $(OBJ_CLIENT) $(LIB)
+	$(CC) $(CFLAGS) -o $(EXE_CLIENT) $(RPC_SYSTEM) $(OBJ_CLIENT)
 
 clean: 
 	rm -f $(RPC_SYSTEM) $(EXE_SERVER) $(OBJ_SERVER) $(EXE_CLIENT) $(OBJ_CLIENT)
