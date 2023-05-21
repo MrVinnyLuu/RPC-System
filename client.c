@@ -6,7 +6,8 @@
 int main(int argc, char *argv[]) {
     int exit_code = 0;
 
-    rpc_client *state = rpc_init_client("::1", 4000);
+    // rpc_client *state = rpc_init_client("::1", 3000);
+    rpc_client *state = rpc_init_client(argv[4], atoi(argv[2]));
     if (state == NULL) {
         exit(EXIT_FAILURE);
     }
