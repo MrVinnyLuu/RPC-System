@@ -36,10 +36,9 @@ int rpc_send_64(int sock_fd, size_t i) {
 /* Receive (up to) a 64-bit integer */
 /* Returns -1 on failure/error */
 size_t rpc_recv_64(int sock_fd) {
-    uint64_t bytes;
+    uint64_t bytes = -1;
     if (recv(sock_fd, &bytes, sizeof(uint64_t), 0) < 0) {
 		perror("recv");
-		close(sock_fd);
 		return -1;
 	}
     // Convert to network byte order to host
@@ -72,6 +71,8 @@ void rpc_data_free(rpc_data *data) {
 /* Send a rpc_data */
 /* Returns -1 on failure/error and 0 otherwise */
 int rpc_data_send(int sock_fd, rpc_data *data) {
+
+    if (sock_fd < 0 || !rpc_data_valid(data)) return -1;
 
     // Send data1
     if (rpc_send_64(sock_fd, data->data1) < 0) {
@@ -110,10 +111,18 @@ rpc_data *rpc_data_recv(int sock_fd) {
     res->data2 = NULL;
 
     // Receive data1
-    res->data1 = rpc_recv_64(sock_fd);
+    if ((res->data1 = rpc_recv_64(sock_fd)) < 0) {
+        perror("rpc_recv_64");
+        rpc_data_free(res);
+        return NULL;
+    }
 
     // Receive data2_len
-    res->data2_len = rpc_recv_64(sock_fd);
+    if ((res->data2_len = rpc_recv_64(sock_fd)) < 0) {
+        perror("rpc_recv_64");
+        rpc_data_free(res);
+        return NULL;
+    }
 
     // Receive data2
     if (res->data2_len > 0) {
@@ -218,11 +227,13 @@ rpc_server *rpc_init_server(int port) {
 
 void rpc_close_server(rpc_server *srv) {
     if (srv == NULL) return;
-    for (int i = 0; i < srv->num_func; i++) {
-        free(srv->functions[i]->name);
-        free(srv->functions[i]);
+    if (srv->functions) {
+        for (int i = 0; i < srv->num_func; i++) {
+            if (srv->functions[i]->name) free(srv->functions[i]->name);
+            if (srv->functions[i]) free(srv->functions[i]);
+        }
+        free(srv->functions);
     }
-    free(srv->functions);
     free(srv);
     srv = NULL;
     return;
@@ -230,7 +241,7 @@ void rpc_close_server(rpc_server *srv) {
 
 int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
 
-    if (!(srv && name && handler)) return -1;
+    if (!(srv && name && handler && srv->functions)) return -1;
 
     // Ensure there's space in the array
     if (srv->num_func == srv->cur_size) {
@@ -246,6 +257,7 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     // Check for duplicate named functions
     int i;
     for (i = 0; i < srv->num_func; i++) {
+        if (!srv->functions[i] || !srv->functions[i]->name) continue;
         if (strcmp(srv->functions[i]->name, name) == 0) {
             break;
         }
@@ -268,16 +280,17 @@ int rpc_register(rpc_server *srv, char *name, rpc_handler handler) {
     // Store handler
     srv->functions[i]->handler = handler;
 
-    // Return function number
+    // Return function number (not used)
     return srv->num_func++;
 
 }
 
 int rpc_find_func(rpc_server *srv, char *name) {
 
-    if (!name || !srv) return -1;
+    if (!name || !srv || !srv->functions) return -1;
 
     for (int i = 0; i < srv->num_func; i++) {
+        if (!srv->functions[i] || !srv->functions[i]->name) continue;
         if (strcmp(srv->functions[i]->name, name) == 0) {
             return i;
         }
@@ -289,8 +302,8 @@ int rpc_find_func(rpc_server *srv, char *name) {
 
 rpc_data *rpc_call_func(rpc_server *srv, int id, rpc_data *payload) {
 
-    if (!srv || !payload || id >= srv->num_func) return NULL;
-    if (srv->functions[id]->handler == NULL) return NULL;
+    if (!srv || !payload || id >= srv->num_func || !srv->functions
+        || !srv->functions[id] || !srv->functions[id]->handler) return NULL;
 
     return srv->functions[id]->handler(payload);
     
@@ -303,7 +316,7 @@ void rpc_serve_all(rpc_server *srv) {
     if (srv == NULL) return;    
 
     socklen_t client_addr_size;
-    int client_sock_fd = -1, n;
+    int client_sock_fd = -1, n = -1;
     struct sockaddr_in6 client_addr;
 
     if (listen(srv->sock_fd, LISTEN_QUEUE_LEN) < 0) {
@@ -351,17 +364,26 @@ void rpc_serve_all(rpc_server *srv) {
 
             // Receive function name string length
             size_t len = rpc_recv_64(client_sock_fd);
+            if (len < 0) {
+                perror("rpc_recv_64");
+                rpc_send_64(client_sock_fd, -1);
+                close(client_sock_fd);
+                rpc_close_server(srv);
+                return;
+            }
 
             // Receive function name
             char *name = malloc(len+1); // +1 for NULL byte
             if (!name) {
                 perror("malloc");
+                rpc_send_64(client_sock_fd, -1);
                 close(client_sock_fd);
                 rpc_close_server(srv);
                 return;
             }
             if ((n = recv(client_sock_fd, name, len, 0)) < 0) {
                 perror("recv");
+                rpc_send_64(client_sock_fd, -1);
                 close(client_sock_fd);
                 rpc_close_server(srv);
                 return;
@@ -375,6 +397,7 @@ void rpc_serve_all(rpc_server *srv) {
             // Respond with function id
             if (rpc_send_64(client_sock_fd, id) < 0) {
                 perror("rpc_send_64");
+                rpc_send_64(client_sock_fd, -1);
                 close(client_sock_fd);
                 rpc_close_server(srv);
                 return;
@@ -417,6 +440,7 @@ void rpc_serve_all(rpc_server *srv) {
             // Return the result if valid (not NULL)
             if (res && rpc_data_send(client_sock_fd, res) < 0) {
                 perror("rpc_data_send");
+                send(client_sock_fd, "NULL", HEADER_LEN, 0);
                 close(client_sock_fd);
                 rpc_close_server(srv);
                 return;
@@ -466,7 +490,12 @@ rpc_client *rpc_init_client(char *addr, int port) {
     }
 
     cl->addr = malloc(strlen(addr)+1);
+    if (!cl->addr) {
+        perror("malloc");
+        return NULL;
+    }
     strcpy(cl->addr, addr);
+
     cl->port = port;
 
     return cl;
@@ -476,7 +505,7 @@ rpc_client *rpc_init_client(char *addr, int port) {
 /* (Re)initiate a connection to the server */
 /* Adapted from https://gist.github.com/jirihnidek/388271b57003c043d322 and
    Practical Week 9 */
-int rpc_connect(rpc_client *cl) {
+int rpc_connect_client(rpc_client *cl) {
 
     if (cl == NULL) return -1;
 
@@ -499,6 +528,7 @@ int rpc_connect(rpc_client *cl) {
 		if (connect(sock_fd, rp->ai_addr, rp->ai_addrlen) != -1) break;
 		close(sock_fd);
 	}
+    
     freeaddrinfo(servinfo);
 
     if (rp == NULL) {
@@ -516,8 +546,8 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 
     // Connect to the server
     int sock_fd = -1;
-    if ((sock_fd = rpc_connect(cl)) < 0) {
-        perror("rpc_connect");
+    if ((sock_fd = rpc_connect_client(cl)) < 0) {
+        perror("rpc_connect_client");
         return NULL;
     }
 
@@ -544,7 +574,7 @@ rpc_handle *rpc_find(rpc_client *cl, char *name) {
 	}
 
     // Receive function id
-    int id = rpc_recv_64(sock_fd);
+    int id = rpc_recv_64(sock_fd); // Error handled after close()
 
     // Close connection
     if (close(sock_fd) < 0) {
@@ -575,8 +605,8 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
     // Connect to the server
     int sock_fd = -1;
-    if ((sock_fd = rpc_connect(cl)) < 0) {
-        perror("rpc_connect");
+    if ((sock_fd = rpc_connect_client(cl)) < 0) {
+        perror("rpc_connect_client");
         return NULL;
     }
 
@@ -614,7 +644,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
     if (strcmp(response, "NULL") == 0) return NULL;
     
     // Receive and return data
-    rpc_data *res = rpc_data_recv(sock_fd);
+    rpc_data *res = rpc_data_recv(sock_fd); // Error handled after close()
 
     // Close connection
     if (close(sock_fd) < 0) {
@@ -631,7 +661,7 @@ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) {
 
 void rpc_close_client(rpc_client *cl) {
     if (cl == NULL) return;
-    free(cl->addr);
+    if (cl->addr) free(cl->addr);
     free(cl);
     cl = NULL;
     return;
