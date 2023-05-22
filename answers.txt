@@ -6,24 +6,24 @@ Student ID: 1269979
 *** Planning task ***
 
 1. Should the server accept calls from everyone, or just a subset of users?
-If the server accepted calls from everyone, malicious actors could perform DOS attacks by flooding the system with calls. Therefore, a "real world" RPC server should only accept calls from authenticated/trusted users. However, this particular project does not need to handle malicious actors and can therefore accept calls from everyone on IPv6.
+If the server accepted calls from everyone, malicious actors could flood the system with calls. Therefore, a "real world" RPC server should only accept calls from authenticated/trusted users. However, this particular project does not need to handle bad actors and can therefore accept calls from everyone on IPv6.
 
 2. Should authentication etc. be provided by the RPC framework, or by the functions that use the RPC framework?
-In both a "real world" server and in this project, authentication should be provided by the RPC framework so that it can provide authentication for all calls and responses. Furthermore, this authentication process would not need to know about the specific inner workings of individual functions or rely on function implementors to provide authentication. The scope of this project does not require such authentication.
+In a "real world" server, authentication should be provided by the RPC framework so that it can provide authentication for all calls and responses before being passed on to functions. Furthermore, this wouldn't need to rely on the competency of function implementors. The scope of this project does not require such authentication.
 
 3. What transport layer protocol should be used? What are the trade-offs?
-In both a "real world" server and in this project, TCP should be used due to its reliability. TCP can handle IP layer packet loss and duplication. The trade-off with using TCP (rather than UDP for example) is that it requires the creation and management of a connection. This can result in slower data transmission and increased overhead.
+In this project, TCP should be used due to its reliability since it can handle IP layer packet loss and duplication. The trade-off with using TCP, rather than UDP, is that it requires the creation and management of a connection, resulting in slower data transmission and increased overhead. A "real world" server could potentially use either if the implementation makes use of UDP in a reliable way.
 
 4. In which function(s) should the socket(s) be created?
-A socket requires: Client IP, Client Port, Server IP, Server Port, Protocol
+A socket requires a 5 tuple: Client IP, Client Port, Server IP, Server Port, Protocol
 The protocol is constant.
-"rpc_init_server" receives information for and sets up Server IP and Server Port.
-"rpc_server_all" listens and accepts incoming connections
-"rpc_init_client"  receives information for and sets up Client IP and Client Port.
-Therefore, the socket(s) will be created in the rpc_init_server, rpc_server_all, rpc_init_client functions in this project. A "real world" server would likely follow the same general idea with separate functions handling client and server information. 
+"rpc_init_server" receives information for and sets up Server IP and Server Port [socket(), bind()].
+"rpc_server_all" listens and accepts incoming connections [listen(), bind()].
+"rpc_connect_client" initiates a connection using Client IP and Client Port [socket()].
+Therefore, the socket(s) will be created in the rpc_init_server, rpc_server_all, rpc_connect_client functions in this project. A "real world" server would likely follow the same idea with separate functions handling client and server 3 tuples. 
 
 5. Should rpc_client and rpc_server be allocated dynamically or statically? What are the implications for the client and server code?
-In this project, "rpc_server" and “rpc_client” should both be allocated dynamically to provide more flexibility and better space efficiency. However, this would mean that the server code would have to be able to handle generic (unspecified size) data, specifically to do with the stored functions. They should also be allocated dynamically to provide modularity and allow use across functions. This would mean that the client and server code would need to free the allocated memory on close. These things would also be true for a "real world" RPC server.
+In this project, "rpc_server" and “rpc_client” should both be allocated dynamically to provide more flexibility, better space efficiency and modularity. However, this would mean that the server code would have to be able to handle generic (unspecified size) data, specifically to do with the stored functions. Also, the client and server code would need to free the allocated memory on close. These things would also be true for a "real world" RPC server.
 
 6. What happens if one host uses big-endian byte order and the other uses little-endian? How does that relate to “network byte order”?
 If hosts use different endian byte orders, information on one host will not match information sent to the other. Using "network byte order" resolves this issue by enforcing big-endian byte order, regardless of the machine's architecture. This is true both in this project and in a "real world" RPC server. 
@@ -36,10 +36,11 @@ If hosts use different endian byte orders, information on one host will not matc
 - The implementation is non-persistent so a connection has to be established and then torn down for each request.
 - Below, each "send" from the client is matched by a "recv" by the server and vice versa.
 
+
 ** Requests **
 Two types of requests:
 FIND
-___ rpc_handle *rpc_find(rpc_client *cl, char *name) ___
+_ rpc_handle *rpc_find(rpc_client *cl, char *name) _
 Used to find a function given its name.
 Returns a rpc_handle* used to identify the function.
 
@@ -52,7 +53,7 @@ On failure (e.g function not found):
 S1b. Server sends 8-byte -1 in network byte order
 
 CALL
-___ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) ___
+_ rpc_data *rpc_call(rpc_client *cl, rpc_handle *h, rpc_data *payload) _
 Used to call a function, identified by its rpc_handle *h, on the rpc_data *payload.
 Returns rpc_data *result of the function on the payload.
 
@@ -71,7 +72,7 @@ S1b. Server sends 5-byte error status message: "NULL" [incl NULL byte]
 
 
 ** Transport Layer Protocol **
-TCP should be used as the transport protocol. The implementation runs on top of IPv6. 
+TCP should be used as the transport protocol. The implementation runs on top of IPv6.
 
 TCP
 Pros: Reliable
@@ -98,4 +99,4 @@ OVERLENGTH ERROR
 MAX IP PACKET SIZE
 - The maximum IP packet payload is 65,535 bytes (Source: http://euclid.nmu.edu/~rappleto/Classes/CS442/Notes/IPv6_Header.html).
 - However, the data link layer has a much smaller MTU (Maximum Transmission Unit)
-- Therefore, the implemented protocol lets TCP automatically deal with packets above 65,535 bytes
+- Therefore, the implemented protocol lets TCP automatically deal with packets above 65,535 bytes in the way it chooses
