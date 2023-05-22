@@ -111,11 +111,7 @@ rpc_data *rpc_data_recv(int sock_fd) {
     res->data2 = NULL;
 
     // Receive data1
-    if ((res->data1 = rpc_recv_64(sock_fd)) < 0) {
-        perror("rpc_recv_64");
-        rpc_data_free(res);
-        return NULL;
-    }
+    res->data1 = rpc_recv_64(sock_fd);
 
     // Receive data2_len
     if ((res->data2_len = rpc_recv_64(sock_fd)) < 0) {
