@@ -61,12 +61,12 @@ C1.  Client sends 5 bytes: "CALL" [incl NULL byte]
 C2.  Client sends 8-byte function id (i.e. h->id) in network byte order
 C3.  Client sends 8-byte data1 of payload in network byte order
 C4.  Client sends 8-byte data2_len of payload in network byte order
-C5.  Client sends data2 bytes of payload if data2_len > 0. This will send data2_len many bytes.
+C5.  Client sends data2 as bytes if data2_len > 0. This will send data2_len many bytes.
 On success:
 S1a. Server sends 5 bytes confirmation status message: "DATA" [incl NULL byte]
 S2.  Server sends 8-byte data1 of result in network byte order
 S3.  Server sends 8-byte data2_len of result in network byte order
-S4.  Server sends data2 bytes of result if data2_len > 0. This will send data2_len many bytes.
+S4.  Server sends data2 as bytes if data2_len > 0. This will send data2_len many bytes.
 On failure (e.g function not found, bad payload data, bad handler, overlength):
 S1b. Server sends 5-byte error status message: "NULL" [incl NULL byte]
 
