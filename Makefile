@@ -8,8 +8,8 @@ CFLAGS = -Wall -g
 RPC_SYSTEM = rpc.o
 RPC_SYSTEM_A = rpc.a
 
-SRC_SERVER = server.c
-SRC_CLIENT = client.c
+SRC_SERVER = server.a
+SRC_CLIENT = client.a
 OBJ_SERVER = $(SRC_SERVER:.c=.o)
 OBJ_CLIENT = $(SRC_CLIENT:.c=.o)
 EXE_SERVER = rpc-server
@@ -30,4 +30,4 @@ $(EXE_CLIENT): $(OBJ_CLIENT)
 	$(CC) $(CFLAGS) -o $(EXE_CLIENT) $(RPC_SYSTEM) $(OBJ_CLIENT)
 
 clean: 
-	rm -f $(RPC_SYSTEM) $(EXE_SERVER) $(OBJ_SERVER) $(EXE_CLIENT) $(OBJ_CLIENT)
+	rm -f $(RPC_SYSTEM) $(EXE_SERVER) $(EXE_CLIENT) client.o server.o
